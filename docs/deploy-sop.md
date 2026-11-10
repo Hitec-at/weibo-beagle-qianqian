@@ -13,7 +13,7 @@
 
 2. 创建或登录 Fly.io 账号，绑定付款方式，并使用个人组织。在控制台设置约 `$10/月`
    的账单告警。
-3. 确认 `fly.toml` 中的 `app` 名称全局唯一。默认是 `wbq-kerry-tech`，如果不唯一，
+3. 确认 `fly.toml` 中的 `app` 名称全局唯一。默认是 `wb-bgqq`，如果不唯一，
    改成自己的名称。
 4. 在 GitHub 仓库的 Actions Secrets 中增加 `FLY_API_TOKEN`。Token 可通过 Fly
    控制台创建，不要写入代码或聊天。

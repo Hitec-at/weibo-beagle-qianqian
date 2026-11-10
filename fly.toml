@@ -1,5 +1,5 @@
 # Fly.io 单镜像部署配置（SQLite 快照已烤进镜像）
-app = "wbq-kerry-tech"
+app = "wb-bgqq"
 primary_region = "nrt"   # 东京；若新浪图床连通性不佳，可改为 "sin"（新加坡）
 
 [build]
