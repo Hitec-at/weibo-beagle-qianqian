@@ -23,7 +23,14 @@ gh auth status >/dev/null 2>&1 || {
 echo "==> 触发 GitHub Actions 部署"
 echo "snapshot=$SNAPSHOT_ASSET"
 echo "sha256=$SNAPSHOT_SHA256"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-$(git branch --show-current)}"
+if [[ -z "$DEPLOY_BRANCH" ]]; then
+  echo "无法确定当前分支，请设置 DEPLOY_BRANCH。" >&2
+  exit 1
+fi
+echo "branch=$DEPLOY_BRANCH"
 gh workflow run deploy.yml \
+  --ref "$DEPLOY_BRANCH" \
   -f snapshot_asset="$SNAPSHOT_ASSET" \
   -f sha256="$SNAPSHOT_SHA256"
 

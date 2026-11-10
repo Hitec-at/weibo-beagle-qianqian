@@ -47,7 +47,7 @@ CATEGORIES="$(sqlite3 "$TMP_DB" "SELECT COUNT(*) FROM post_categories;")"
 echo "posts=$POSTS categories=$CATEGORIES"
 
 mkdir -p "$SNAPSHOT_DIR"
-STAMP="$(date '+%Y%m%dT%H%M%S%z')"
+STAMP="$(date -u '+%Y%m%dT%H%M%SZ')"
 ASSET="weibo-${STAMP}.db.gz"
 ASSET_PATH="$SNAPSHOT_DIR/$ASSET"
 

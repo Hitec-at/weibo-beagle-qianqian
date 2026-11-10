@@ -38,7 +38,7 @@ jobs:
           SNAPSHOT_SHA256: ${{ inputs.sha256 }}
         run: |
           set -euo pipefail
-          [[ "$SNAPSHOT_ASSET" =~ ^[A-Za-z0-9._-]+\.db\.gz$ ]]
+          [[ "$SNAPSHOT_ASSET" =~ ^[A-Za-z0-9._+-]+\.db\.gz$ ]]
           SNAPSHOT_SHA256="$(printf '%s' "$SNAPSHOT_SHA256" | tr '[:upper:]' '[:lower:]')"
           [[ "$SNAPSHOT_SHA256" =~ ^[0-9a-f]{64}$ ]]
           echo "SNAPSHOT_SHA256=$SNAPSHOT_SHA256" >> "$GITHUB_ENV"
