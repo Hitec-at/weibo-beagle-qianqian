@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}N宗罪 · 比格钱钱 微博检索{% endblock %}
+{% block content %}
+<section class="page">
+  <h1>{{ title }}</h1>
+  {% if memes %}
+  <div class="meme-grid">
+    {% for m in memes %}
+    <a class="meme-card" href="/meme/{{ m.slug }}">{{ m.name }}</a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">暂无内容。</p>
+  {% endif %}
+  <p class="backlink"><a href="/memes/all">全部罪证 →</a></p>
+</section>
+{% endblock %}

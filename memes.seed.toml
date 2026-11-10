@@ -1,0 +1,41 @@
+# N宗罪条目种子清单（人工维护）
+# 每个条目可以是一个梗，也可以是一类反复出现的行为/罪名。
+# 新增条目：复制一段 [[memes]]，填 name / aliases / behavior_tags /
+# exclude / search_queries 等字段后执行
+#   .venv/bin/python wbq.py memes-import
+
+[[memes]]
+slug = "chishi"
+name = "吃屎"
+aliases = ["吃屎了", "吃屎狗"]
+exclude = []
+search_queries = ["吃屎", "纸尿裤", "鸡屎"]
+origin = "钱钱偷吃了小杨孩子、鸡的粪便"
+explanation = "钱钱偷吃了小杨孩子、鸡的粪便，如跑到卫生间垃圾桶翻小孩的纸尿裤、到鸡圈里吃鸡屎，被主人小杨发现"
+behavior_tags = ["吃屎", "被打"]
+boundary = "一般文字会命中「吃屎」"
+representative_url = "https://weibo.com/3866429224/QDPhz6X9x"
+
+[[memes]]
+slug = "touchi"
+name = "偷吃"
+aliases = ["偷吃", "偷零食", "抢零食", "抢小孩零食", "偷小孩零食", "猫饭"]
+exclude = []
+search_queries = ["偷吃", "抢零食", "猫饭", "厨房饭菜", "偷小孩零食"]
+origin = "钱钱偷吃小孩零食、厨房饭菜和猫饭"
+explanation = "钱钱趁人不注意偷吃零食、饭菜或猫饭，常被当场发现"
+behavior_tags = ["偷吃", "抢食", "厨房", "猫饭"]
+boundary = "正文出现偷吃、抢食或猫饭等行为；单纯提到厨房不算"
+representative_url = ""
+
+[[memes]]
+slug = "shouli"
+name = "收礼"
+aliases = ["收礼", "钱钱收礼", "收礼日记", "寄来", "生日礼物", "礼物", "快递", "旺仔俱乐部"]
+exclude = ["售价", "包邮", "下单", "链接", "果王", "一箱", "已发出", "发出", "出售", "自提", "售罄", "发货", "预定", "预订"]
+search_queries = ["钱钱收礼", "收礼日记", "生日礼物", "旺仔俱乐部", "网友寄", "快递"]
+origin = "网友们寄到钱钱家的礼物和快递，11月生日前后尤其多"
+explanation = "网友们寄给钱钱家的礼物、快递和生日心意"
+behavior_tags = ["收礼", "礼物", "快递", "生日"]
+boundary = "网友寄给钱钱家的礼物或快递；商品售卖和广告不算"
+representative_url = ""

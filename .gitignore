@@ -1,0 +1,20 @@
+# 敏感配置
+.env
+*.cookie
+
+# 数据与私有高清图存档
+data/
+*.db
+*.sqlite
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 运行时
+.DS_Store
+*.log
+dist/
+.remember/

@@ -1,0 +1,130 @@
+name: Deploy Weibo Site
+
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot_asset:
+        description: "GitHub Release 中的数据库快照文件名"
+        required: true
+        type: string
+      sha256:
+        description: "数据库快照的 SHA256"
+        required: true
+        type: string
+      release_tag:
+        description: "存放快照的 Release 标签"
+        required: true
+        default: data-latest
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate inputs
+        env:
+          SNAPSHOT_ASSET: ${{ inputs.snapshot_asset }}
+          SNAPSHOT_SHA256: ${{ inputs.sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$SNAPSHOT_ASSET" =~ ^[A-Za-z0-9._-]+\.db\.gz$ ]]
+          SNAPSHOT_SHA256="$(printf '%s' "$SNAPSHOT_SHA256" | tr '[:upper:]' '[:lower:]')"
+          [[ "$SNAPSHOT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          echo "SNAPSHOT_SHA256=$SNAPSHOT_SHA256" >> "$GITHUB_ENV"
+
+      - name: Download and verify database snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          SNAPSHOT_ASSET: ${{ inputs.snapshot_asset }}
+        run: |
+          set -euo pipefail
+          SNAPSHOT_DIR="$RUNNER_TEMP/weibo-snapshot"
+          mkdir -p "$SNAPSHOT_DIR" data
+          gh release download "$RELEASE_TAG" \
+            --pattern "$SNAPSHOT_ASSET" \
+            --dir "$SNAPSHOT_DIR"
+          printf '%s  %s\n' \
+            "$SNAPSHOT_SHA256" "$SNAPSHOT_DIR/$SNAPSHOT_ASSET" \
+            | sha256sum --check --strict
+          gzip -dc "$SNAPSHOT_DIR/$SNAPSHOT_ASSET" > data/weibo.db
+          python3 - <<'PY'
+          import sqlite3
+
+          conn = sqlite3.connect("data/weibo.db")
+          try:
+              integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
+              posts = conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+          finally:
+              conn.close()
+          if integrity != "ok":
+              raise SystemExit(f"SQLite integrity_check failed: {integrity}")
+          if posts < 1:
+              raise SystemExit("Snapshot contains no posts")
+          print(f"sqlite=ok posts={posts}")
+          PY
+
+      - name: Build container
+        run: |
+          set -euo pipefail
+          docker build --tag wbq-smoke:${GITHUB_RUN_ID} .
+
+      - name: Run local container smoke tests
+        run: |
+          set -euo pipefail
+          CONTAINER="wbq-smoke-${GITHUB_RUN_ID}"
+          cleanup() {
+            docker stop "$CONTAINER" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run --detach --name "$CONTAINER" --rm \
+            --publish 18000:8000 "wbq-smoke:${GITHUB_RUN_ID}"
+          for _ in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:18000/healthz >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          curl --fail --silent http://127.0.0.1:18000/healthz
+          bash scripts/smoke-test.sh http://127.0.0.1:18000 data/weibo.db
+
+      - name: Set up Fly.io
+        uses: superfly/flyctl-actions/setup-flyctl@master
+        with:
+          version: latest
+
+      - name: Deploy to Fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          flyctl deploy --remote-only --ha=false
+          flyctl status
+
+      - name: Verify public site
+        run: |
+          set -euo pipefail
+          APP_NAME="$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("fly.toml").read_text())["app"])')"
+          BASE_URL="https://${APP_NAME}.fly.dev"
+          echo "base_url=$BASE_URL"
+          bash scripts/smoke-test.sh "$BASE_URL" data/weibo.db
+          echo "### Deployment complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- URL: $BASE_URL" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Snapshot: \`${{ inputs.snapshot_asset }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- SHA256: \`$SNAPSHOT_SHA256\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stop local container
+        if: always()
+        run: docker stop "wbq-smoke-${GITHUB_RUN_ID}" >/dev/null 2>&1 || true

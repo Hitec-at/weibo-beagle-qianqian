@@ -1,0 +1,28 @@
+# Fly.io 单镜像部署配置（SQLite 快照已烤进镜像）
+app = "wbq-kerry-tech"
+primary_region = "nrt"   # 东京；若新浪图床连通性不佳，可改为 "sin"（新加坡）
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8000"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  memory = "256mb"
+  cpu_kind = "shared"
+  cpus = 1

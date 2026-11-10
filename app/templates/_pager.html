@@ -1,0 +1,7 @@
+{% if pagination and pagination.pages > 1 %}
+<nav class="pager">
+  {% if pagination.prev_url %}<a href="{{ pagination.prev_url }}">上一页</a>{% else %}<span class="off">上一页</span>{% endif %}
+  <span class="pageno">{{ pagination.page }} / {{ pagination.pages }}</span>
+  {% if pagination.next_url %}<a href="{{ pagination.next_url }}">下一页</a>{% else %}<span class="off">下一页</span>{% endif %}
+</nav>
+{% endif %}

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}比格钱钱 微博检索{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/">比格钱钱 · 微博检索</a>
+    <nav class="nav">
+      <a href="/">热门</a>
+      <a href="/memes">N宗罪</a>
+      <a href="/interactions">互动</a>
+      <a href="/photos">高清图</a>
+    </nav>
+    <form class="search" action="/search" method="get">
+      <input type="text" name="q" placeholder="搜索微博" value="{{ request.query_params.get('q', '') }}">
+      <button type="submit">搜索</button>
+    </form>
+  </header>
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="foot">
+    <p>本站仅对 @比格钱钱 的公开微博做引用索引：短引文 + 缩略图预览 + 跳转原微博，版权归原作者所有。如涉侵权请告知，立即删除。</p>
+  </footer>
+</body>
+</html>

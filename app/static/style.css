@@ -1,0 +1,67 @@
+:root {
+  --bg: #faf7f2;
+  --fg: #2b2b2b;
+  --muted: #8a8178;
+  --line: #ece5db;
+  --brand: #c2703d;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+.top {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+  flex-wrap: wrap;
+}
+.brand { font-weight: 700; font-size: 17px; color: var(--brand); text-decoration: none; }
+.nav { display: flex; gap: 14px; }
+.nav a { color: var(--fg); text-decoration: none; }
+.nav a:hover { color: var(--brand); }
+.search { margin-left: auto; display: flex; gap: 6px; }
+.search input { padding: 6px 10px; border: 1px solid var(--line); border-radius: 6px; }
+.search button { padding: 6px 12px; border: 0; border-radius: 6px; background: var(--brand); color: #fff; cursor: pointer; }
+.main { max-width: 1080px; margin: 0 auto; padding: 24px 22px 60px; }
+.page h1 { font-size: 22px; margin: 0 0 4px; }
+.cards { display: flex; flex-direction: column; gap: 14px; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+.chead { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+.excerpt { margin: 0 0 10px; line-height: 1.6; white-space: pre-wrap; }
+.thumbs { display: flex; gap: 8px; margin-bottom: 10px; }
+.thumbs img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; }
+.srcbox { margin: 0 0 10px; padding: 10px 12px; background: #fbf6ee; border: 1px dashed var(--line); border-radius: 10px; }
+.srchead { color: var(--brand); font-size: 13px; margin-bottom: 6px; }
+.srctext { margin: 0 0 8px; line-height: 1.55; white-space: pre-wrap; }
+.srcvideo { display: block; width: 100%; max-height: 560px; margin: 0 0 10px; border-radius: 10px; background: #000; }
+.postvideo { display: block; width: 100%; max-height: 480px; margin: 0 0 10px; border-radius: 10px; background: #000; }
+.videofallback { margin: 0 0 10px; padding: 10px; border-radius: 10px; background: #fff; border: 1px solid var(--line); }
+.videofallback img { display: block; width: 100%; max-height: 320px; object-fit: cover; border-radius: 8px; margin-bottom: 8px; }
+.videofallback a { color: var(--brand); text-decoration: none; font-size: 14px; }
+.videolabel { color: var(--muted); font-size: 12px; margin: -4px 0 10px; }
+.pager { display: flex; align-items: center; justify-content: center; gap: 18px; margin: 26px 0 0; font-size: 14px; }
+.pager a { color: var(--brand); text-decoration: none; }
+.pager .off { color: var(--muted); opacity: 0.45; }
+.pager .pageno { color: var(--muted); }
+.more { color: var(--brand); text-decoration: none; font-size: 14px; }
+.more.big { display: inline-block; margin-top: 14px; }
+.photogrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+.photo { position: relative; display: block; border-radius: 12px; overflow: hidden; background: #fff; border: 1px solid var(--line); text-decoration: none; }
+.photo img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block; }
+.pmeta { display: block; padding: 8px 10px; font-size: 12px; color: var(--muted); }
+.detail blockquote { margin: 12px 0; padding: 12px 16px; background: #fff; border-left: 3px solid var(--brand); border-radius: 8px; line-height: 1.7; }
+.dmeta { color: var(--muted); font-size: 13px; }
+.empty { color: var(--muted); }
+.foot { max-width: 1080px; margin: 0 auto; padding: 0 22px 30px; color: var(--muted); font-size: 12px; }
+.crumb { margin: 0 0 10px; font-size: 14px; }
+.crumb a, .backlink a { color: var(--brand); text-decoration: none; }
+.backlink { margin-top: 18px; }
+.meme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.meme-card { display: block; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; text-decoration: none; color: var(--brand); font-size: 19px; font-weight: 700; }
+.meme-card:hover { border-color: var(--brand); }

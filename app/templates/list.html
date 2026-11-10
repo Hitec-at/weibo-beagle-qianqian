@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · 比格钱钱 微博检索{% endblock %}
+{% block content %}
+<section class="page">
+  <h1>{{ title }}</h1>
+  {% if posts %}
+    {% if grid %}
+    <div class="photogrid">
+      {% for p in posts %}
+        {% set pics = pics_of(p) %}
+        {% if pics %}
+        <a class="photo" href="{{ original_url(p) }}" target="_blank" rel="noopener">
+          <img loading="lazy" src="{{ img_proxy(pics[0]['url'] or pics[0]['thumb']) }}" alt="比格钱钱 微博配图">
+          <span class="pmeta">{{ fmt_time(p['ts']) }} · 转{{ p['reposts_count'] }} 评{{ p['comments_count'] }} 赞{{ p['attitudes_count'] }}</span>
+        </a>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="cards">
+      {% for p in posts %}
+      <article class="card">
+        <div class="chead">
+          <span class="ctime">{{ fmt_time(p['ts']) }}</span>
+          <span class="ceng">赞 {{ p['attitudes_count'] }} · 转 {{ p['reposts_count'] }} · 评 {{ p['comments_count'] }}</span>
+        </div>
+        <p class="excerpt">{{ excerpt(p['text_plain'], 120) }}</p>
+        {% set vid = video_info(p) %}
+        {% if vid and (not show_source or vid['source'] == 0) %}
+        {% if vid['playable'] %}
+        <video class="postvideo" controls preload="none" playsinline{% if vid['poster'] %} poster="{{ img_proxy(vid['poster']) }}"{% endif %}>
+          <source src="/video/{{ p['id'] }}?source={{ vid['source'] }}" type="video/mp4">
+          当前浏览器不支持视频播放。
+        </video>
+        {% else %}
+        <div class="videofallback">
+          {% if vid['poster'] %}<img loading="lazy" src="{{ img_proxy(vid['poster']) }}" alt="微博视频封面">{% endif %}
+          <a href="{{ vid['page_url'] or original_url(p) }}" target="_blank" rel="noopener">视频直链已过期，打开原微博或视频页 →</a>
+        </div>
+        {% endif %}
+        {% if vid['source'] == 1 %}<div class="videolabel">转发的源微博视频</div>{% endif %}
+        {% endif %}
+        {% if show_source %}
+        {% set src = source_of(p) %}
+        {% if src %}
+        <div class="srcbox">
+          <div class="srchead">源微博 · @{{ src['user'] }}</div>
+          {% if src['text'] %}<p class="srctext">{{ excerpt(src['text'], 140) }}</p>{% endif %}
+          {% if src['video'] %}
+          {% if src['video']['playable'] %}
+          <video class="srcvideo" controls preload="none" playsinline{% if src['video']['poster'] %} poster="{{ img_proxy(src['video']['poster']) }}"{% endif %}>
+            <source src="/video/{{ p['id'] }}?source=1" type="video/mp4">
+            当前浏览器不支持视频播放。
+          </video>
+          {% else %}
+          <div class="videofallback">
+            {% if src['video']['poster'] %}<img loading="lazy" src="{{ img_proxy(src['video']['poster']) }}" alt="源微博视频封面">{% endif %}
+            <a href="{{ src['video']['page_url'] or original_url(p) }}" target="_blank" rel="noopener">视频直链已过期，打开原微博或视频页 →</a>
+          </div>
+          {% endif %}
+          {% if src['video']['page_url'] %}<a class="more" href="{{ src['video']['page_url'] }}" target="_blank" rel="noopener">打开视频原页 →</a>{% endif %}
+          {% endif %}
+          {% if src['pics'] %}
+          <div class="thumbs">
+            {% for pic in src['pics'] %}
+            <img loading="lazy" src="{{ img_proxy(pic['thumb'] or pic['url']) }}" alt="源微博配图">
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% endif %}
+        {% set pics = pics_of(p) %}
+        {% if pics %}
+        <div class="thumbs">
+          {% for pic in pics[:3] %}
+          <img loading="lazy" src="{{ img_proxy(pic['thumb'] or pic['url']) }}" alt="比格钱钱 微博配图">
+          {% endfor %}
+        </div>
+        {% endif %}
+        <a class="more" href="{{ original_url(p) }}" target="_blank" rel="noopener">查看原微博 →</a>
+      </article>
+      {% endfor %}
+    </div>
+    {% endif %}
+  {% else %}
+    <p class="empty">暂无内容。</p>
+  {% endif %}
+  {% include "_pager.html" %}
+</section>
+{% endblock %}

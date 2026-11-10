@@ -1,0 +1,31 @@
+# 敏感配置，绝不打进公开镜像
+.env
+*.cookie
+
+# 本地运行残留
+.git
+.gitignore
+.github
+.venv
+.remember
+__pycache__
+**/__pycache__
+*.pyc
+.DS_Store
+
+# 不随镜像发布的抓取工具与文档
+wbq.py
+fetch_weibo.py
+docs
+README.md
+PLAN.md
+*.md
+dist
+scripts
+
+# SQLite 临时文件（只打包主库）
+data/*.db-wal
+data/*.db-shm
+data/*.db-journal
+data/*.bak*
+data/*.backup*

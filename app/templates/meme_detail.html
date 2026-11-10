@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ meme.name }} · 比格钱钱 N宗罪{% endblock %}
+{% block content %}
+<section class="page">
+  <p class="crumb"><a href="/memes">← N宗罪</a></p>
+  <h1>{{ meme.name }}</h1>
+  {% if posts %}
+  <div class="cards">
+    {% for p in posts %}
+    <article class="card">
+      <div class="chead">
+        <span class="ctime">{{ fmt_time(p['ts']) }}</span>
+        <span class="ceng">赞 {{ p['attitudes_count'] }} · 转 {{ p['reposts_count'] }} · 评 {{ p['comments_count'] }}</span>
+      </div>
+      <p class="excerpt">{{ excerpt(p['text_plain'], 160) }}</p>
+      {% set vid = video_info(p) %}
+      {% if vid %}
+      <video class="postvideo" controls preload="none" playsinline{% if vid['poster'] %} poster="{{ img_proxy(vid['poster']) }}"{% endif %}>
+        <source src="/video/{{ p['id'] }}?source={{ vid['source'] }}" type="video/mp4">
+        当前浏览器不支持视频播放。
+      </video>
+      {% if vid['source'] == 1 %}<div class="videolabel">转发的源微博视频</div>{% endif %}
+      {% endif %}
+      {% set pics = pics_of(p) %}
+      {% if pics %}
+      <div class="thumbs">
+        {% for pic in pics[:3] %}
+        <img loading="lazy" src="{{ img_proxy(pic['thumb'] or pic['url']) }}" alt="比格钱钱 微博配图">
+        {% endfor %}
+      </div>
+      {% endif %}
+      <a class="more" href="{{ original_url(p) }}" target="_blank" rel="noopener">查看原微博 →</a>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">暂无内容。</p>
+  {% endif %}
+  {% include "_pager.html" %}
+</section>
+{% endblock %}
