@@ -7,7 +7,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit, urlunsplit
 
 import requests
 from fastapi import FastAPI, HTTPException, Request
@@ -206,6 +206,8 @@ VIDEO_UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 _VIDEO_LOCK = threading.Lock()
+_DNS_CACHE: dict[str, tuple[str, float]] = {}
+_DNS_TTL = 300
 
 
 def _video_data(node: dict) -> dict:
@@ -344,6 +346,47 @@ def resolve_video(p: dict, source: bool) -> dict | None:
         return _refresh_video(p, source, key)
 
 
+def _doh_resolve(host: str) -> str:
+    """Fly 东京节点偶发无法解析微博视频 CDN 时，用 DoH 取 A 记录。"""
+    now = time.time()
+    cached = _DNS_CACHE.get(host)
+    if cached and cached[1] > now:
+        return cached[0]
+    if not host.endswith(".weibocdn.com"):
+        return ""
+    try:
+        resp = requests.get(
+            "https://cloudflare-dns.com/dns-query",
+            params={"name": host, "type": "A"},
+            headers={"Accept": "application/dns-json", "User-Agent": VIDEO_UA},
+            timeout=5,
+        )
+        if resp.status_code != 200:
+            return ""
+        for answer in resp.json().get("Answer") or []:
+            if answer.get("type") == 1 and answer.get("data"):
+                ip = str(answer["data"])
+                _DNS_CACHE[host] = (ip, now + _DNS_TTL)
+                return ip
+    except (requests.RequestException, ValueError):
+        return ""
+    return ""
+
+
+def _ip_fallback_url(url: str) -> tuple[str, str] | None:
+    parsed = urlsplit(url)
+    if parsed.scheme != "http" or not parsed.hostname:
+        return None
+    ip = _doh_resolve(parsed.hostname)
+    if not ip:
+        return None
+    netloc = f"{ip}:{parsed.port}" if parsed.port and parsed.port != 80 else ip
+    return (
+        urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment)),
+        parsed.hostname,
+    )
+
+
 @app.get("/img")
 def img(u: str = ""):
     u = (u or "").strip()
@@ -433,14 +476,30 @@ def video(pid: str, request: Request, source: int = 0):
     if range_header:
         headers["Range"] = range_header
 
+    def request_video(url: str, extra_headers: dict | None = None):
+        merged = dict(headers)
+        merged.update(extra_headers or {})
+        try:
+            resp = requests.get(url, headers=merged, stream=True, timeout=30)
+            if resp.status_code in (200, 206):
+                return resp
+            resp.close()
+        except requests.RequestException:
+            pass
+        return None
+
     def open_upstream():
         info = resolve_video(p, is_source)
         if not info:
             return None
-        try:
-            return requests.get(info["url"], headers=headers, stream=True, timeout=30)
-        except requests.RequestException:
-            return None
+        upstream = request_video(info["url"])
+        if upstream is not None:
+            return upstream
+        fallback = _ip_fallback_url(info["url"])
+        if fallback:
+            url, host = fallback
+            return request_video(url, {"Host": host})
+        return None
 
     upstream = open_upstream()
     if upstream is None:
@@ -448,15 +507,6 @@ def video(pid: str, request: Request, source: int = 0):
         upstream = open_upstream()
         if upstream is None:
             raise HTTPException(status_code=502, detail="视频暂不可用")
-    if upstream.status_code not in (200, 206):
-        upstream.close()
-        store.invalidate_video_cache(key)
-        upstream = open_upstream()
-        if upstream is None:
-            raise HTTPException(status_code=502, detail="视频暂不可用")
-    if upstream.status_code not in (200, 206):
-        upstream.close()
-        raise HTTPException(status_code=502, detail="视频源不可用")
     out_headers = {}
     for name in ("Content-Length", "Content-Range", "Accept-Ranges"):
         if upstream.headers.get(name):
