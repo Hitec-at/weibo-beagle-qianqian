@@ -107,10 +107,13 @@ def cmd_memes_import(args) -> int:
         print(f"[导入失败] {exc}", file=sys.stderr)
         return 1
     for item in summary:
-        terms = "、".join(item["term_counts"]) or "无"
+        if item["match_mode"] == "curated":
+            basis = "人工审定"
+        else:
+            basis = "、".join(item["term_counts"]) or "无"
         print(
             f"{item['name']}（{item['slug']}）：命中 {item['matched_posts']} 条；"
-            f"触发词 {terms}；代表微博{'已关联' if item['representative_found'] else '尚未入库'}"
+            f"依据 {basis}；代表微博{'已关联' if item['representative_found'] else '尚未入库'}"
         )
     import classify
 
