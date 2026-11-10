@@ -1,7 +1,7 @@
-"""梗条目：种子加载、入库与规则关联。
+"""梗条目：种子加载、入库与关联。
 
-梗条目由人工维护（data/memes.seed.toml），系统按「梗名 + 别名」对微博正文做
-启发式匹配，匹配结果写入 post_memes，供专题页和 CLI 使用。
+梗条目由人工维护（memes.seed.toml）。条目可使用关键词规则匹配，也可使用人工
+审定的 post id 列表，关联结果写入 post_memes，供专题页和 CLI 使用。
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def _unique(items) -> list[str]:
 
 
 def sync(seed_path: Path | str = SEED_PATH) -> list[dict]:
-    """把种子文件同步到库，并按触发词重建规则关联。"""
+    """把种子文件同步到库，并重建规则或人工审定关联。"""
     seed = load_seed(seed_path)
     store.init_db()
     now = datetime.now(timezone.utc).isoformat()
@@ -57,10 +57,30 @@ def sync(seed_path: Path | str = SEED_PATH) -> list[dict]:
         user_aliases = _unique(item.get("aliases") or [])
         excludes = _unique(item.get("exclude") or [])
         search_queries = _unique(item.get("search_queries") or [])
+        match_mode = str(item.get("match_mode") or "rule").strip()
+        if match_mode not in {"rule", "curated"}:
+            raise ValueError(f"「{name}」的 match_mode 必须是 rule 或 curated")
+        curated_ids = _unique(item.get("curated_post_ids") or [])
+        if match_mode == "curated" and not curated_ids:
+            raise ValueError(f"「{name}」使用 curated 模式时必须提供 curated_post_ids")
+        if match_mode == "rule" and curated_ids:
+            raise ValueError(f"「{name}」使用 rule 模式时不能提供 curated_post_ids")
         terms = _unique([name, *user_aliases])
         rep_url = str(item.get("representative_url") or "").strip()
         rep_mid = _mid_from_url(rep_url)
         rep_post = store.find_post_by_mid(rep_mid) if rep_mid else None
+        curated_posts: list[dict] = []
+        if match_mode == "curated":
+            curated_posts = [store.get_post(post_id) or {} for post_id in curated_ids]
+            missing = [
+                post_id
+                for post_id, post in zip(curated_ids, curated_posts)
+                if not post
+            ]
+            if missing:
+                raise ValueError(
+                    f"「{name}」审定的微博尚未入库：{', '.join(missing)}"
+                )
 
         store.upsert_meme(
             {
@@ -82,21 +102,32 @@ def sync(seed_path: Path | str = SEED_PATH) -> list[dict]:
             }
         )
 
-        store.clear_rule_links(slug)
+        store.clear_generated_links(slug)
         matched_ids: set[str] = set()
         term_counts: dict[str, int] = {}
-        for term in terms:
-            rows = store.find_posts_by_text(term, tuple(excludes))
-            if rows:
-                term_counts[term] = len(rows)
-            for row in rows:
-                store.link_post_meme(row["id"], slug, term)
-                matched_ids.add(row["id"])
+        if match_mode == "curated":
+            for post in curated_posts:
+                store.link_post_meme(
+                    post["id"],
+                    slug,
+                    "人工审定",
+                    matched_by="curated",
+                )
+                matched_ids.add(post["id"])
+        else:
+            for term in terms:
+                rows = store.find_posts_by_text(term, tuple(excludes))
+                if rows:
+                    term_counts[term] = len(rows)
+                for row in rows:
+                    store.link_post_meme(row["id"], slug, term)
+                    matched_ids.add(row["id"])
 
         summary.append(
             {
                 "slug": slug,
                 "name": name,
+                "match_mode": match_mode,
                 "matched_posts": len(matched_ids),
                 "term_counts": term_counts,
                 "representative_found": bool(rep_post),

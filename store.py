@@ -383,11 +383,13 @@ def get_meme(slug: str) -> dict | None:
         conn.close()
 
 
-def clear_rule_links(slug: str) -> None:
+def clear_generated_links(slug: str) -> None:
+    """重建前清除由同步流程生成的关键词与人工审定关联。"""
     conn = connect()
     try:
         conn.execute(
-            "DELETE FROM post_memes WHERE meme_slug = ? AND matched_by = 'rule'",
+            "DELETE FROM post_memes WHERE meme_slug = ? "
+            "AND matched_by IN ('rule', 'curated')",
             (slug,),
         )
         conn.commit()
