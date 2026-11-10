@@ -30,6 +30,9 @@ store.init_db()
 CST = timezone(timedelta(hours=8))
 PAGE_SIZE = 20
 PHOTO_PAGE_SIZE = 24
+WECHAT_VERIFICATION_NAME = "71fa4c3c7081e4ff84c5dd8b70e7daa6.txt"
+WECHAT_VERIFICATION_PATH = BASE_DIR / "static" / WECHAT_VERIFICATION_NAME
+WECHAT_VERIFICATION_CONTENT = "835f00a550e35a0cb7fefdffe4c272953e0603cd"
 
 
 def pagination_context(
@@ -462,6 +465,15 @@ def img(u: str = ""):
 @app.get("/healthz")
 def healthz():
     return {"status": "ok", "posts": store.count_posts()}
+
+
+@app.get(f"/{WECHAT_VERIFICATION_NAME}")
+def wechat_browser_verification():
+    return Response(
+        content=WECHAT_VERIFICATION_CONTENT,
+        media_type="text/plain",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/video/{pid}")
