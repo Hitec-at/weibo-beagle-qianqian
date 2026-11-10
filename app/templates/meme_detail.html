@@ -26,7 +26,12 @@
       {% if pics %}
       <div class="thumbs">
         {% for pic in pics[:3] %}
-        <img loading="lazy" src="{{ img_proxy(pic['thumb'] or pic['url']) }}" alt="比格钱钱 微博配图">
+        <img loading="lazy" src="{{ img_proxy(pic['thumb'] or pic['url']) }}"
+             data-lightbox-src="{{ img_proxy(pic['url'] or pic['thumb']) }}"
+             data-lightbox-original="{{ original_url(p) }}"
+             data-lightbox-group="post-{{ p['id'] }}"
+             data-lightbox-alt="比格钱钱 微博配图"
+             alt="比格钱钱 微博配图" tabindex="0">
         {% endfor %}
       </div>
       {% endif %}
