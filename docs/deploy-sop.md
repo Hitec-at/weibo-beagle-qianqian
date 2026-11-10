@@ -99,7 +99,7 @@ Actions 摘要会记录本次快照文件名、SHA256 和公网地址。回滚�
 ## 五、安全边界
 
 - `.env`、微博 Cookie 和 `data/` 不进入 Git。
-- 运行时镜像只包含已校验的 SQLite 快照，不包含抓取工具。
+- 运行时镜像包含只读站点代码与已校验 SQLite 快照；微博 Cookie 仅来自 Fly secret，不写入镜像。
 - `/img` 只允许精确匹配新浪图床域名；拒绝重定向和非图片响应。
 - 图片内存缓存限制为约 24 MB，避免 256 MB Machine 被缓存撑满。
 - 公网默认设置 `ENABLE_VIDEO_REFRESH=0`，不会在服务器保存或使用微博 Cookie。

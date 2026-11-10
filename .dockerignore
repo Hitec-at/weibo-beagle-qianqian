@@ -13,9 +13,8 @@ __pycache__
 *.pyc
 .DS_Store
 
-# 不随镜像发布的抓取工具与文档
+# 不随镜像发布的命令行工具与文档
 wbq.py
-fetch_weibo.py
 docs
 README.md
 PLAN.md
