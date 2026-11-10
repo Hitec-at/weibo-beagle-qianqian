@@ -1,6 +1,6 @@
 # Fly.io 单镜像部署配置（SQLite 快照已烤进镜像）
 app = "wb-bgqq"
-primary_region = "hkg"   # 香港；优先改善中国大陆与东亚访问路径
+primary_region = "sin"   # 新加坡；Fly 已停用 hkg
 
 [build]
   dockerfile = "Dockerfile"
