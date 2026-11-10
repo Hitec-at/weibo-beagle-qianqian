@@ -1,0 +1,7 @@
+{% if sort_control %}
+<nav class="sorter" aria-label="排序">
+  {% for option in sort_control.options %}
+  <a href="{{ option.url }}"{% if option.active %} class="active" aria-current="page"{% endif %}>{{ option.label }}</a>
+  {% endfor %}
+</nav>
+{% endif %}

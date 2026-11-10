@@ -44,8 +44,12 @@ def photo_where(threshold: int | None = None) -> tuple[str, tuple]:
     return where, (t,)
 
 
+def search_terms(q: str) -> list[str]:
+    return [t for t in re.split(r"\s+", (q or "").strip()) if t]
+
+
 def search_where(q: str) -> tuple[str, tuple]:
-    terms = [t for t in re.split(r"\s+", q.strip()) if t]
+    terms = search_terms(q)
     clauses, params = [], []
     for t in terms:
         clauses.append(_like("text_plain"))

@@ -31,7 +31,7 @@ class ImageProxySafetyTest(unittest.TestCase):
         self.assertEqual(img_proxy("https://example.com/demo.jpg"), "https://example.com/demo.jpg")
 
 
-class VideoFallbackTest(unittest.TestCase):
+class VideoInfoTest(unittest.TestCase):
     def _post(self, stream_url: str) -> dict:
         raw = {
             "page_info": {
@@ -45,17 +45,40 @@ class VideoFallbackTest(unittest.TestCase):
         }
         return {"is_video": 1, "raw_json": json.dumps(raw)}
 
-    def test_expired_direct_url_uses_fallback(self) -> None:
+    def test_expired_direct_url_still_returns_refreshable_video_info(self) -> None:
         info = video_info(self._post("https://video.example/demo.mp4?Expires=1"))
         self.assertIsNotNone(info)
-        self.assertFalse(info["playable"])
+        self.assertEqual(info["source"], 0)
         self.assertEqual(info["page_url"], "https://video.weibo.com/show?fid=demo")
 
     def test_future_direct_url_is_playable(self) -> None:
         expires = int(time.time()) + 3600
         info = video_info(self._post(f"https://video.example/demo.mp4?Expires={expires}"))
         self.assertIsNotNone(info)
-        self.assertTrue(info["playable"])
+        self.assertEqual(info["source"], 0)
+
+    def test_mix_media_video_is_detected(self) -> None:
+        raw = {
+            "mix_media_info": {
+                "items": [
+                    {
+                        "type": "video",
+                        "data": {
+                            "object_type": "video",
+                            "page_pic": "https://wx1.sinaimg.cn/demo.jpg",
+                            "media_info": {
+                                "stream_url": "https://video.example/demo.mp4?Expires=1",
+                                "h5_url": "https://video.weibo.com/show?fid=demo",
+                            },
+                        },
+                    }
+                ]
+            }
+        }
+        info = video_info({"is_video": 1, "raw_json": json.dumps(raw)})
+        self.assertIsNotNone(info)
+        self.assertEqual(info["source"], 0)
+        self.assertEqual(info["poster"], "https://wx1.sinaimg.cn/demo.jpg")
 
 
 if __name__ == "__main__":

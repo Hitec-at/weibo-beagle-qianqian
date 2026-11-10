@@ -32,12 +32,17 @@ PAGE_SIZE = 20
 PHOTO_PAGE_SIZE = 24
 
 
-def pagination_context(request: Request, total: int, page: int, per_page: int) -> dict:
+def pagination_context(
+    request: Request, total: int, page: int, per_page: int, sort: str | None = None
+) -> dict:
     pages = max(1, (total + per_page - 1) // per_page)
     current = max(1, min(page, pages))
 
     def page_url(number: int) -> str:
         params = dict(request.query_params)
+        params.pop("page", None)
+        if sort is not None:
+            params["sort"] = sort
         params["page"] = str(number)
         return f"{request.url.path}?{urlencode(params)}"
 
@@ -48,6 +53,34 @@ def pagination_context(request: Request, total: int, page: int, per_page: int) -
         "prev_url": page_url(current - 1) if current > 1 else "",
         "next_url": page_url(current + 1) if current < pages else "",
     }
+
+
+def sort_control(
+    request: Request, options: list[tuple[str, str]], default: str
+) -> dict:
+    allowed = {value for value, _ in options}
+    requested = request.query_params.get("sort", default)
+    current = requested if requested in allowed else default
+    base = [
+        (key, value)
+        for key, value in request.query_params.multi_items()
+        if key not in {"sort", "page"}
+    ]
+    links = []
+    for value, label in options:
+        params = list(base)
+        if value != default:
+            params.append(("sort", value))
+        url = request.url.path + (("?" + urlencode(params)) if params else "")
+        links.append(
+            {
+                "value": value,
+                "label": label,
+                "url": url,
+                "active": value == current,
+            }
+        )
+    return {"current": current, "options": links}
 
 
 def original_url(p: dict) -> str:
@@ -214,7 +247,6 @@ def _video_meta(node: dict) -> dict | None:
     return {
         "poster": poster,
         "page_url": mi.get("h5_url") or pi.get("page_url") or "",
-        "playable": bool(url and (_expires_at(url) == 0 or _expires_at(url) > int(time.time()) + 60)),
     }
 
 
@@ -234,7 +266,6 @@ def video_info(p: dict) -> dict | None:
             "source": 0,
             "poster": meta.get("poster") or "",
             "page_url": meta.get("page_url") or "",
-            "playable": bool(meta.get("playable")),
         }
     meta = _video_meta(raw)
     if meta:
@@ -395,17 +426,34 @@ def video(pid: str, request: Request, source: int = 0):
     p = store.get_post(pid)
     if not p:
         raise HTTPException(status_code=404, detail="微博不存在")
-    info = resolve_video(p, bool(source))
-    if not info:
-        raise HTTPException(status_code=502, detail="视频暂不可用")
+    is_source = bool(source)
+    key = f"{pid}:{'rt' if is_source else 'self'}"
     headers = {"User-Agent": VIDEO_UA, "Referer": "https://weibo.com/"}
     range_header = request.headers.get("range")
     if range_header:
         headers["Range"] = range_header
-    try:
-        upstream = requests.get(info["url"], headers=headers, stream=True, timeout=30)
-    except requests.RequestException:
-        raise HTTPException(status_code=502, detail="视频拉取失败")
+
+    def open_upstream():
+        info = resolve_video(p, is_source)
+        if not info:
+            return None
+        try:
+            return requests.get(info["url"], headers=headers, stream=True, timeout=30)
+        except requests.RequestException:
+            return None
+
+    upstream = open_upstream()
+    if upstream is None:
+        store.invalidate_video_cache(key)
+        upstream = open_upstream()
+        if upstream is None:
+            raise HTTPException(status_code=502, detail="视频暂不可用")
+    if upstream.status_code not in (200, 206):
+        upstream.close()
+        store.invalidate_video_cache(key)
+        upstream = open_upstream()
+        if upstream is None:
+            raise HTTPException(status_code=502, detail="视频暂不可用")
     if upstream.status_code not in (200, 206):
         upstream.close()
         raise HTTPException(status_code=502, detail="视频源不可用")
@@ -478,9 +526,12 @@ def meme_index(request: Request):
 def memes_all(request: Request, page: int = 1):
     where, params = filters.category_where("memes")
     total = store.count_posts(where, params)
-    pagination = pagination_context(request, total, page, PAGE_SIZE)
+    options = [("hot", "热门"), ("latest", "最新"), ("earliest", "最早")]
+    sort_control_data = sort_control(request, options, "hot")
+    sort_key = sort_control_data["current"]
+    pagination = pagination_context(request, total, page, PAGE_SIZE, sort_key)
     rows = store.query_posts(
-        where, params, limit=PAGE_SIZE, order="hot", offset=(pagination["page"] - 1) * PAGE_SIZE
+        where, params, limit=PAGE_SIZE, order=sort_key, offset=(pagination["page"] - 1) * PAGE_SIZE
     )
     return templates.TemplateResponse(
         request,
@@ -490,6 +541,7 @@ def memes_all(request: Request, page: int = 1):
             "posts": rows,
             "grid": False,
             "pagination": pagination,
+            "sort_control": sort_control_data,
         },
     )
 
@@ -500,9 +552,12 @@ def meme_detail(request: Request, slug: str, page: int = 1):
     if not meme:
         raise HTTPException(status_code=404, detail="罪名专题不存在")
     total = store.count_meme_posts(slug)
-    pagination = pagination_context(request, total, page, PAGE_SIZE)
+    options = [("earliest", "时间线"), ("latest", "最新"), ("hot", "热门")]
+    sort_control_data = sort_control(request, options, "earliest")
+    sort_key = sort_control_data["current"]
+    pagination = pagination_context(request, total, page, PAGE_SIZE, sort_key)
     posts = store.query_meme_posts(
-        slug, limit=PAGE_SIZE, order="new", offset=(pagination["page"] - 1) * PAGE_SIZE
+        slug, limit=PAGE_SIZE, order=sort_key, offset=(pagination["page"] - 1) * PAGE_SIZE
     )
     return templates.TemplateResponse(
         request,
@@ -512,6 +567,7 @@ def meme_detail(request: Request, slug: str, page: int = 1):
             "meme": meme,
             "posts": posts,
             "pagination": pagination,
+            "sort_control": sort_control_data,
         },
     )
 
@@ -520,9 +576,12 @@ def meme_detail(request: Request, slug: str, page: int = 1):
 def interactions(request: Request, page: int = 1):
     where, params = filters.category_where("interactions")
     total = store.count_posts(where, params)
-    pagination = pagination_context(request, total, page, PAGE_SIZE)
+    options = [("latest", "最新"), ("hot", "热门")]
+    sort_control_data = sort_control(request, options, "latest")
+    sort_key = sort_control_data["current"]
+    pagination = pagination_context(request, total, page, PAGE_SIZE, sort_key)
     rows = store.query_posts(
-        where, params, limit=PAGE_SIZE, order="hot", offset=(pagination["page"] - 1) * PAGE_SIZE
+        where, params, limit=PAGE_SIZE, order=sort_key, offset=(pagination["page"] - 1) * PAGE_SIZE
     )
     return templates.TemplateResponse(
         request,
@@ -533,6 +592,7 @@ def interactions(request: Request, page: int = 1):
             "grid": False,
             "show_source": True,
             "pagination": pagination,
+            "sort_control": sort_control_data,
         },
     )
 
@@ -541,12 +601,15 @@ def interactions(request: Request, page: int = 1):
 def photos(request: Request, page: int = 1):
     where, params = filters.category_where("photos")
     total = store.count_posts(where, params)
-    pagination = pagination_context(request, total, page, PHOTO_PAGE_SIZE)
+    options = [("hot", "热门"), ("latest", "最新"), ("likes", "最多点赞")]
+    sort_control_data = sort_control(request, options, "hot")
+    sort_key = sort_control_data["current"]
+    pagination = pagination_context(request, total, page, PHOTO_PAGE_SIZE, sort_key)
     rows = store.query_posts(
         where,
         params,
         limit=PHOTO_PAGE_SIZE,
-        order="hot",
+        order=sort_key,
         offset=(pagination["page"] - 1) * PHOTO_PAGE_SIZE,
     )
     return templates.TemplateResponse(
@@ -557,6 +620,7 @@ def photos(request: Request, page: int = 1):
             "posts": rows,
             "grid": True,
             "pagination": pagination,
+            "sort_control": sort_control_data,
         },
     )
 
@@ -568,10 +632,19 @@ def search(request: Request, q: str = "", page: int = 1):
         return RedirectResponse("/")
     where, params = filters.search_where(q)
     total = store.count_posts(where, params)
-    pagination = pagination_context(request, total, page, PAGE_SIZE)
-    rows = store.query_posts(
-        where, params, limit=PAGE_SIZE, order="hot", offset=(pagination["page"] - 1) * PAGE_SIZE
-    )
+    options = [("relevance", "相关度"), ("latest", "最新"), ("hot", "热门")]
+    sort_control_data = sort_control(request, options, "relevance")
+    sort_key = sort_control_data["current"]
+    pagination = pagination_context(request, total, page, PAGE_SIZE, sort_key)
+    offset = (pagination["page"] - 1) * PAGE_SIZE
+    if sort_key == "relevance":
+        rows = store.query_posts_relevance(
+            where, params, filters.search_terms(q), limit=PAGE_SIZE, offset=offset
+        )
+    else:
+        rows = store.query_posts(
+            where, params, limit=PAGE_SIZE, order=sort_key, offset=offset
+        )
     return templates.TemplateResponse(
         request,
         "list.html",
@@ -580,6 +653,7 @@ def search(request: Request, q: str = "", page: int = 1):
             "posts": rows,
             "grid": False,
             "pagination": pagination,
+            "sort_control": sort_control_data,
         },
     )
 

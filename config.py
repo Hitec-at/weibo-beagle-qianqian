@@ -77,8 +77,8 @@ FETCH_LONGTEXT = os.environ.get("FETCH_LONGTEXT", "1") == "1"
 FETCH_PIC_INFO = os.environ.get("FETCH_PIC_INFO", "1") == "1"
 
 # ---- 公网视频代理 ----
-# 默认关闭云端刷新。直链过期后页面回退到原微博或视频原页，不在服务器保存 Cookie。
-ENABLE_VIDEO_REFRESH = os.environ.get("ENABLE_VIDEO_REFRESH", "0") == "1"
+# 默认开启按需刷新：仅当用户播放视频且直链过期时才请求微博接口。
+ENABLE_VIDEO_REFRESH = os.environ.get("ENABLE_VIDEO_REFRESH", "1") == "1"
 
 # ---- 存储 ----
 _DB_RAW = os.environ.get("DB_PATH") or str(BASE_DIR / "data" / "weibo.db")

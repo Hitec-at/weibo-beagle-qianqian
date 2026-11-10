@@ -26,5 +26,29 @@
   <footer class="foot">
     <p>本站仅对 @比格钱钱 的公开微博做引用索引：短引文 + 缩略图预览 + 跳转原微博，版权归原作者所有。如涉侵权请告知，立即删除。</p>
   </footer>
+  <script>
+    document.addEventListener("play", function (event) {
+      if (event.target && event.target.tagName === "VIDEO") {
+        event.target.dataset.userPlayed = "1";
+      }
+    }, true);
+    document.addEventListener("error", function (event) {
+      const video = event.target && event.target.closest ? event.target.closest("video") : null;
+      if (!video) return;
+      const retries = Number(video.dataset.retry || 0);
+      if (retries >= 2) return;
+      const source = video.querySelector("source");
+      const base = source ? source.getAttribute("src") : video.getAttribute("src");
+      if (!base) return;
+      video.dataset.retry = String(retries + 1);
+      const next = base.split("&retry=")[0] + (base.includes("?") ? "&" : "?") + "retry=" + Date.now();
+      if (source) source.src = next;
+      else video.src = next;
+      video.load();
+      if (video.dataset.userPlayed === "1") {
+        video.play().catch(function () {});
+      }
+    }, true);
+  </script>
 </body>
 </html>

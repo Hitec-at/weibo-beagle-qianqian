@@ -6,17 +6,10 @@
   <blockquote>{{ excerpt(p['text_plain'], 200) }}</blockquote>
   {% set vid = video_info(p) %}
   {% if vid %}
-  {% if vid['playable'] %}
   <video class="postvideo" controls preload="none" playsinline{% if vid['poster'] %} poster="{{ img_proxy(vid['poster']) }}"{% endif %}>
     <source src="/video/{{ p['id'] }}?source={{ vid['source'] }}" type="video/mp4">
     当前浏览器不支持视频播放。
   </video>
-  {% else %}
-  <div class="videofallback">
-    {% if vid['poster'] %}<img loading="lazy" src="{{ img_proxy(vid['poster']) }}" alt="微博视频封面">{% endif %}
-    <a href="{{ vid['page_url'] or original_url(p) }}" target="_blank" rel="noopener">视频直链已过期，打开原微博或视频页 →</a>
-  </div>
-  {% endif %}
   {% if vid['source'] == 1 %}<div class="videolabel">转发的源微博视频</div>{% endif %}
   {% endif %}
   {% set pics = pics_of(p) %}

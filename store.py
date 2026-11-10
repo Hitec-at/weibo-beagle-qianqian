@@ -199,7 +199,9 @@ def query_posts(
 ) -> list[dict]:
     orders = {
         "hot": f"{engagement_sql()} DESC, ts DESC, id DESC",
+        "latest": "ts DESC, id DESC",
         "new": "ts DESC, id DESC",
+        "earliest": "ts ASC, id ASC",
         "likes": "attitudes_count DESC, ts DESC, id DESC",
     }
     clause = orders.get(order, orders["hot"])
@@ -210,6 +212,54 @@ def query_posts(
             (*params, limit, max(0, offset)),
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def search_relevance_sql(terms: list[str]) -> tuple[str, tuple[str, ...]]:
+    """搜索排序：完整短语、词频、首次命中位置，再按热度破同分。"""
+    terms = [term for term in terms if term]
+    if not terms:
+        return f"{engagement_sql()} DESC, ts DESC, id DESC", ()
+    parts: list[str] = []
+    params: list[str] = []
+    phrase = " ".join(terms)
+    if phrase:
+        parts.append(
+            "(CASE WHEN instr(lower(text_plain), lower(?)) > 0 "
+            "THEN 2000 + max(0, 500 - instr(lower(text_plain), lower(?))) ELSE 0 END)"
+        )
+        params.extend([phrase, phrase])
+    for term in terms:
+        parts.append(
+            "(CASE WHEN instr(lower(text_plain), lower(?)) > 0 "
+            "THEN max(0, 400 - instr(lower(text_plain), lower(?))) ELSE 0 END)"
+        )
+        params.extend([term, term])
+        parts.append(
+            "(((length(lower(text_plain)) - "
+            "length(replace(lower(text_plain), lower(?), ''))) / max(length(?), 1)) * 20)"
+        )
+        params.extend([term, term])
+    score = " + ".join(parts)
+    return f"({score}) DESC, {engagement_sql()} DESC, ts DESC, id DESC", tuple(params)
+
+
+def query_posts_relevance(
+    where: str,
+    params: tuple,
+    terms: list[str],
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict]:
+    clause, order_params = search_relevance_sql(terms)
+    conn = connect()
+    try:
+        rows = conn.execute(
+            f"SELECT * FROM posts WHERE {where} ORDER BY {clause} LIMIT ? OFFSET ?",
+            (*params, *order_params, limit, max(0, offset)),
+        ).fetchall()
+        return [dict(row) for row in rows]
     finally:
         conn.close()
 
@@ -397,13 +447,16 @@ def find_post_by_mid(mid: str) -> dict | None:
 
 
 def query_meme_posts(
-    slug: str, limit: int = 200, order: str = "new", offset: int = 0
+    slug: str, limit: int = 200, order: str = "earliest", offset: int = 0
 ) -> list[dict]:
     orders = {
+        "earliest": "p.ts ASC, p.id ASC",
         "new": "p.ts ASC, p.id ASC",
+        "latest": "p.ts DESC, p.id DESC",
         "hot": "(p.attitudes_count + 5 * p.reposts_count + 3 * p.comments_count) DESC, p.ts DESC, p.id DESC",
+        "likes": "p.attitudes_count DESC, p.ts DESC, p.id DESC",
     }
-    clause = orders.get(order, orders["new"])
+    clause = orders.get(order, orders["earliest"])
     conn = connect()
     try:
         rows = conn.execute(
@@ -505,6 +558,15 @@ def set_video_cache(key: str, url: str, poster: str, expires_at: int) -> None:
             """,
             (key, url, poster or "", int(expires_at or 0)),
         )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def invalidate_video_cache(key: str) -> None:
+    conn = connect()
+    try:
+        conn.execute("UPDATE video_cache SET expires_at = 0 WHERE key = ?", (key,))
         conn.commit()
     finally:
         conn.close()

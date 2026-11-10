@@ -4,6 +4,7 @@
 <section class="page">
   <p class="crumb"><a href="/memes">← N宗罪</a></p>
   <h1>{{ meme.name }}</h1>
+  {% include "_sort.html" %}
   {% if posts %}
   <div class="cards">
     {% for p in posts %}

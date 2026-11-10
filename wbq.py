@@ -353,7 +353,11 @@ def build_parser() -> argparse.ArgumentParser:
     mm = sub.add_parser("meme", help="查看单个N宗罪专题的微博")
     mm.add_argument("slug")
     mm.add_argument("--limit", type=int, default=200)
-    mm.add_argument("--order", choices=["new", "hot"], default="new")
+    mm.add_argument(
+        "--order",
+        choices=["earliest", "latest", "hot", "likes", "new"],
+        default="earliest",
+    )
     mm.add_argument("--json", action="store_true")
 
     s = sub.add_parser("search", help="关键词搜索")
