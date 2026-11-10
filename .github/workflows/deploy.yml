@@ -12,9 +12,8 @@ on:
         required: true
         type: string
       release_tag:
-        description: "存放快照的 Release 标签"
+        description: "不可变的 data-* Release 标签"
         required: true
-        default: data-latest
         type: string
 
 permissions:
@@ -26,6 +25,7 @@ concurrency:
 
 jobs:
   deploy:
+    environment: production
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -36,12 +36,42 @@ jobs:
         env:
           SNAPSHOT_ASSET: ${{ inputs.snapshot_asset }}
           SNAPSHOT_SHA256: ${{ inputs.sha256 }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           [[ "$SNAPSHOT_ASSET" =~ ^[A-Za-z0-9._+-]+\.db\.gz$ ]]
           SNAPSHOT_SHA256="$(printf '%s' "$SNAPSHOT_SHA256" | tr '[:upper:]' '[:lower:]')"
           [[ "$SNAPSHOT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$RELEASE_TAG" =~ ^data-[0-9]{8}T[0-9]{6}Z$ ]]
           echo "SNAPSHOT_SHA256=$SNAPSHOT_SHA256" >> "$GITHUB_ENV"
+
+      - name: Record deployment binding
+        run: |
+          set -euo pipefail
+          mkdir -p deploy
+          python3 - <<'PY'
+          import json
+          import os
+
+          binding = {
+              "commit": os.environ["GITHUB_SHA"],
+              "code_release": os.environ["GITHUB_REF_NAME"],
+              "data_release": "${{ inputs.release_tag }}",
+              "asset_name": "${{ inputs.snapshot_asset }}",
+              "sha256": os.environ["SNAPSHOT_SHA256"],
+          }
+          with open("deploy/snapshot.json", "w", encoding="utf-8") as handle:
+              json.dump(binding, handle, ensure_ascii=False, indent=2)
+              handle.write("\n")
+          print(json.dumps(binding, ensure_ascii=False))
+          PY
+          cat deploy/snapshot.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload deployment binding
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-binding
+          path: deploy/snapshot.json
 
       - name: Download and verify database snapshot
         env:
