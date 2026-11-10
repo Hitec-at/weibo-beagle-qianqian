@@ -139,7 +139,11 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -euo pipefail
-          flyctl deploy --remote-only --ha=false
+          PRIMARY_REGION="$(python3 -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("fly.toml").read_text())["primary_region"])')"
+          echo "primary_region=$PRIMARY_REGION"
+          flyctl deploy --remote-only --ha=false \
+            --primary-region "$PRIMARY_REGION" \
+            --regions "$PRIMARY_REGION"
           flyctl status
 
       - name: Verify public site
