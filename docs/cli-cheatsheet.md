@@ -76,6 +76,18 @@ $PYBIN wbq.py comments                            # 列出已入库的评论图�
 $PYBIN wbq.py comments --fetch <微博id> --pages 3 # 抓取某条微博下评论里的图片
 ```
 
+## 评论质量试跑
+
+```bash
+$PYBIN wbq.py comments-pilot
+    # 离线选择 20 条 N宗罪/互动分层样本，不联网
+$PYBIN wbq.py comments-pilot --fetch --output dist/comment-pilot
+    # 每帖抓一级评论首页，并导出 JSON/Markdown 审核包
+```
+
+评论请求共享 `REQUEST_LEDGER_DB` 的每日额度。二级回复只保存接口内嵌部分，
+审核包会标记为不完整。
+
 ## 跑站点
 
 ```bash
