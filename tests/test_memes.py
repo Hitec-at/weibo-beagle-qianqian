@@ -28,6 +28,7 @@ class MemeSeedTest(unittest.TestCase):
         self.assertIn("我偷偷吃", seed["touchi"]["exclude"])
         self.assertIn("发小的狗", seed["pangshou-erxiangxing"]["exclude"])
         self.assertIn("11岁的边牧", seed["pangshou-erxiangxing"]["exclude"])
+        self.assertNotIn("一箱", seed["shouli"]["exclude"])
 
 
 class CuratedSyncTest(unittest.TestCase):
