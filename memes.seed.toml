@@ -9,7 +9,10 @@
 [[memes]]
 slug = "chishi"
 name = "吃屎"
+match_mode = "mixed"
 aliases = ["吃屎了", "吃屎狗"]
+auto_publish_terms = ["吃屎", "吃屎了", "吃屎狗"]
+candidate_terms = ["纸尿裤", "鸡屎", "翻垃圾桶", "垃圾桶"]
 exclude = []
 search_queries = ["吃屎", "纸尿裤", "鸡屎"]
 origin = "钱钱偷吃了小杨孩子、鸡的粪便"
@@ -21,7 +24,12 @@ representative_url = "https://weibo.com/3866429224/QDPhz6X9x"
 [[memes]]
 slug = "touchi"
 name = "偷吃"
+match_mode = "mixed"
 aliases = ["偷吃", "偷零食", "抢零食", "抢小孩零食", "偷小孩零食", "猫饭"]
+auto_publish_terms = [
+    "偷吃", "偷零食", "偷小孩零食", "抢小孩零食", "猫饭"
+]
+candidate_terms = ["抢零食", "厨房饭菜", "翻厨房", "偷吃零食"]
 exclude = []
 search_queries = ["偷吃", "抢零食", "猫饭", "厨房饭菜", "偷小孩零食"]
 origin = "钱钱偷吃小孩零食、厨房饭菜和猫饭"
@@ -33,10 +41,18 @@ representative_url = ""
 [[memes]]
 slug = "pangshou-erxiangxing"
 name = "胖瘦二象性"
-match_mode = "curated"
+match_mode = "mixed"
 aliases = [
     "胖瘦二象性", "体重管理", "体重打卡", "减肥", "上秤", "上称",
     "五十斤", "48斤", "46斤", "瘦了", "没胖", "虚胖"
+]
+auto_publish_terms = [
+    "体重管理", "体重打卡", "一上称", "上称48斤", "今日加餐",
+    "吃了一天还没吃饱", "刚吃了罐头又饿了", "还想吃"
+]
+candidate_terms = [
+    "减肥", "五十斤", "48斤", "46斤", "瘦了", "没胖", "虚胖",
+    "吃不饱", "加餐", "罐头补偿", "胖", "瘦", "饿"
 ]
 curated_post_ids = [
     "5266342316081591", "5271259193809003", "5275614045274410",
@@ -65,7 +81,12 @@ representative_url = "https://weibo.com/3866429224/5333186169013964"
 [[memes]]
 slug = "shouli"
 name = "收礼"
+match_mode = "mixed"
 aliases = ["收礼", "钱钱收礼", "收礼日记", "寄来", "生日礼物", "礼物", "快递", "旺仔俱乐部"]
+auto_publish_terms = [
+    "收礼", "钱钱收礼", "收礼日记", "生日礼物", "旺仔俱乐部"
+]
+candidate_terms = ["寄来", "礼物", "快递"]
 exclude = ["售价", "包邮", "下单", "链接", "果王", "一箱", "已发出", "发出", "出售", "自提", "售罄", "发货", "预定", "预订"]
 search_queries = ["钱钱收礼", "收礼日记", "生日礼物", "旺仔俱乐部", "网友寄", "快递"]
 origin = "网友们寄到钱钱家的礼物和快递，11月生日前后尤其多"

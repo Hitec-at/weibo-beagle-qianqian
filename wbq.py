@@ -107,10 +107,13 @@ def cmd_memes_import(args) -> int:
         print(f"[导入失败] {exc}", file=sys.stderr)
         return 1
     for item in summary:
+        terms = "、".join(item["term_counts"]) or "无"
         if item["match_mode"] == "curated":
             basis = "人工审定"
+        elif item["match_mode"] == "mixed":
+            basis = f"人工审定 + 自动公开词：{terms}"
         else:
-            basis = "、".join(item["term_counts"]) or "无"
+            basis = terms
         print(
             f"{item['name']}（{item['slug']}）：命中 {item['matched_posts']} 条；"
             f"依据 {basis}；代表微博{'已关联' if item['representative_found'] else '尚未入库'}"
@@ -244,6 +247,21 @@ def cmd_request_status(args) -> int:
     return 0
 
 
+def cmd_baseline(args) -> int:
+    import baseline
+
+    try:
+        if args.baseline_cmd == "build":
+            result = baseline.build(args.version, search_pages=args.search_pages)
+        else:
+            result = baseline.report(args.version)
+    except (OSError, ValueError) as exc:
+        print(f"[baseline] 失败：{exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_clean_pics(args) -> int:
     store.init_db()
     result = store.clean_empty_pics()
@@ -334,6 +352,19 @@ def build_parser() -> argparse.ArgumentParser:
     rs = sub.add_parser("request-status", help="查看共享微博请求额度")
     rs.add_argument("--day", default=None, help="日期 YYYY-MM-DD，默认今天（上海时区）")
 
+    bl = sub.add_parser("baseline", help="构建或查看 N宗罪 baseline")
+    bls = bl.add_subparsers(dest="baseline_cmd", required=True)
+    blb = bls.add_parser("build", help="构建并冻结 baseline")
+    blb.add_argument("--version", required=True, help="不可变 baseline 版本")
+    blb.add_argument(
+        "--search-pages",
+        type=int,
+        default=0,
+        help="每个微博搜索词抓取的页数；0 表示不联网",
+    )
+    blr = bls.add_parser("report", help="查看 baseline 报告")
+    blr.add_argument("--version", required=True, help="baseline 版本")
+
     sub.add_parser("clean-pics", help="清理 pics_json 中 thumb/url 都为空的图片项")
 
     sub.add_parser("repair-media", help="修复 mix_media_info 混合媒体的图片与视频标记")
@@ -391,6 +422,7 @@ def main(argv=None) -> int:
         "fetch": cmd_fetch,
         "stats": cmd_stats,
         "request-status": cmd_request_status,
+        "baseline": cmd_baseline,
         "clean-pics": cmd_clean_pics,
         "repair-media": cmd_repair_media,
         "videos-warm": cmd_videos_warm,

@@ -13,7 +13,7 @@ class MemeSeedTest(unittest.TestCase):
         seed = memes.load_seed()
         item = next(m for m in seed if m["slug"] == "pangshou-erxiangxing")
 
-        self.assertEqual(item["match_mode"], "curated")
+        self.assertEqual(item["match_mode"], "mixed")
         self.assertEqual(len(item["curated_post_ids"]), 22)
         self.assertEqual(len(set(item["curated_post_ids"])), 22)
         self.assertEqual(

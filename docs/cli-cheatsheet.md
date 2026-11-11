@@ -59,6 +59,12 @@ N宗罪条目存放在 `memes.seed.toml`。每个条目可以是一项热梗，�
 
 ```bash
 $PYBIN wbq.py memes-import                       # 导入种子并按触发词重建关联
+$PYBIN wbq.py baseline build --version baseline-v1
+                                                  # 只用本地库构建并冻结 baseline
+$PYBIN wbq.py baseline build --version baseline-v1-search --search-pages 1
+                                                  # 显式访问微博搜索；消耗共享请求额度
+$PYBIN wbq.py baseline report --version baseline-v1
+                                                  # 查看公开/候选来源统计
 ```
 
 `slug` 用于专题页 URL（`/meme/<slug>`）；不填时默认使用 `name`。代表微博的 `representative_url` 尚未入库时会显示“尚未入库”，抓取到对应 mid 后重新导入即可自动关联。

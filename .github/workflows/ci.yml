@@ -24,7 +24,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Compile
-        run: python -m compileall -q app config.py classify.py fetch_weibo.py filters.py memes.py store.py wbq.py
+        run: python -m compileall -q app baseline.py config.py classify.py fetch_weibo.py filters.py memes.py store.py wbq.py
 
       - name: Unit tests
         run: python -m unittest discover -s tests -v
