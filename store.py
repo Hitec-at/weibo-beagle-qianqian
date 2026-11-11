@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS comments (
     text_plain TEXT NOT NULL DEFAULT '',
     like_count INTEGER NOT NULL DEFAULT 0,
     author_liked INTEGER NOT NULL DEFAULT 0,
+    author_liked_known INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT '',
     is_reply INTEGER NOT NULL DEFAULT 0,
     reply_total INTEGER NOT NULL DEFAULT 0,
@@ -64,6 +65,19 @@ CREATE TABLE IF NOT EXISTS comments (
 );
 CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_root ON comments(root_id);
+CREATE TABLE IF NOT EXISTS comment_root_selections (
+    post_id TEXT NOT NULL,
+    comment_id TEXT NOT NULL,
+    page_rank INTEGER NOT NULL,
+    like_rank INTEGER NOT NULL,
+    selected_by_default INTEGER NOT NULL DEFAULT 0,
+    selected_by_likes INTEGER NOT NULL DEFAULT 0,
+    selection_order INTEGER NOT NULL,
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (post_id, comment_id)
+);
+CREATE INDEX IF NOT EXISTS idx_comment_root_selections_post
+    ON comment_root_selections(post_id);
 CREATE TABLE IF NOT EXISTS comment_threads (
     post_id TEXT PRIMARY KEY,
     fetched_at TEXT NOT NULL,
@@ -186,6 +200,14 @@ def init_db() -> None:
         if "search_queries_json" not in columns:
             conn.execute(
                 "ALTER TABLE memes ADD COLUMN search_queries_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        comment_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(comments)")
+        }
+        if "author_liked_known" not in comment_columns:
+            conn.execute(
+                "ALTER TABLE comments ADD COLUMN author_liked_known "
+                "INTEGER NOT NULL DEFAULT 0"
             )
         conn.commit()
     finally:
@@ -435,31 +457,57 @@ def query_comment_pics(limit: int = 100) -> list[dict]:
         conn.close()
 
 
+UPSERT_COMMENT_SQL = """
+    INSERT INTO comments (
+        id, post_id, root_id, parent_id, user_name, text_plain,
+        like_count, author_liked, author_liked_known, created_at, is_reply,
+        reply_total, reply_saved, reply_complete, fetched_at
+    ) VALUES (
+        :id, :post_id, :root_id, :parent_id, :user_name, :text_plain,
+        :like_count, :author_liked, :author_liked_known, :created_at, :is_reply,
+        :reply_total, :reply_saved, :reply_complete, :fetched_at
+    )
+    ON CONFLICT(id) DO UPDATE SET
+        post_id = excluded.post_id,
+        root_id = excluded.root_id,
+        parent_id = excluded.parent_id,
+        user_name = excluded.user_name,
+        text_plain = excluded.text_plain,
+        like_count = excluded.like_count,
+        author_liked = excluded.author_liked,
+        author_liked_known = excluded.author_liked_known,
+        created_at = excluded.created_at,
+        is_reply = excluded.is_reply,
+        reply_total = excluded.reply_total,
+        reply_saved = excluded.reply_saved,
+        reply_complete = excluded.reply_complete,
+        fetched_at = excluded.fetched_at
+"""
+
+
+UPSERT_COMMENT_THREAD_SQL = """
+    INSERT INTO comment_threads (
+        post_id, fetched_at, source, roots_seen, roots_selected,
+        replies_saved, max_id, complete
+    ) VALUES (
+        :post_id, :fetched_at, :source, :roots_seen, :roots_selected,
+        :replies_saved, :max_id, :complete
+    )
+    ON CONFLICT(post_id) DO UPDATE SET
+        fetched_at = excluded.fetched_at,
+        source = excluded.source,
+        roots_seen = excluded.roots_seen,
+        roots_selected = excluded.roots_selected,
+        replies_saved = excluded.replies_saved,
+        max_id = excluded.max_id,
+        complete = excluded.complete
+"""
+
+
 def upsert_comment(comment: dict) -> None:
     conn = connect()
     try:
-        conn.execute(
-            """
-            INSERT INTO comments (
-                id, post_id, root_id, parent_id, user_name, text_plain,
-                like_count, author_liked, created_at, is_reply,
-                reply_total, reply_saved, reply_complete, fetched_at
-            ) VALUES (
-                :id, :post_id, :root_id, :parent_id, :user_name, :text_plain,
-                :like_count, :author_liked, :created_at, :is_reply,
-                :reply_total, :reply_saved, :reply_complete, :fetched_at
-            )
-            ON CONFLICT(id) DO UPDATE SET
-                text_plain = excluded.text_plain,
-                like_count = excluded.like_count,
-                author_liked = excluded.author_liked,
-                reply_total = excluded.reply_total,
-                reply_saved = excluded.reply_saved,
-                reply_complete = excluded.reply_complete,
-                fetched_at = excluded.fetched_at
-            """,
-            comment,
-        )
+        conn.execute(UPSERT_COMMENT_SQL, comment)
         conn.commit()
     finally:
         conn.close()
@@ -468,27 +516,47 @@ def upsert_comment(comment: dict) -> None:
 def upsert_comment_thread(thread: dict) -> None:
     conn = connect()
     try:
-        conn.execute(
-            """
-            INSERT INTO comment_threads (
-                post_id, fetched_at, source, roots_seen, roots_selected,
-                replies_saved, max_id, complete
-            ) VALUES (
-                :post_id, :fetched_at, :source, :roots_seen, :roots_selected,
-                :replies_saved, :max_id, :complete
-            )
-            ON CONFLICT(post_id) DO UPDATE SET
-                fetched_at = excluded.fetched_at,
-                source = excluded.source,
-                roots_seen = excluded.roots_seen,
-                roots_selected = excluded.roots_selected,
-                replies_saved = excluded.replies_saved,
-                max_id = excluded.max_id,
-                complete = excluded.complete
-            """,
-            thread,
-        )
+        conn.execute(UPSERT_COMMENT_THREAD_SQL, thread)
         conn.commit()
+    finally:
+        conn.close()
+
+
+def replace_comment_page(
+    post_id: str,
+    comments: list[dict],
+    selections: list[dict],
+    thread: dict,
+) -> None:
+    """原子替换一条微博的首轮评论包，避免重跑混入过期首页结果。"""
+    conn = connect()
+    try:
+        conn.execute("DELETE FROM comments WHERE post_id = ?", (post_id,))
+        conn.execute(
+            "DELETE FROM comment_root_selections WHERE post_id = ?", (post_id,)
+        )
+        for comment in comments:
+            conn.execute(UPSERT_COMMENT_SQL, comment)
+        for selection in selections:
+            conn.execute(
+                """
+                INSERT INTO comment_root_selections (
+                    post_id, comment_id, page_rank, like_rank,
+                    selected_by_default, selected_by_likes,
+                    selection_order, fetched_at
+                ) VALUES (
+                    :post_id, :comment_id, :page_rank, :like_rank,
+                    :selected_by_default, :selected_by_likes,
+                    :selection_order, :fetched_at
+                )
+                """,
+                selection,
+            )
+        conn.execute(UPSERT_COMMENT_THREAD_SQL, thread)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -498,9 +566,22 @@ def comments_for_post(post_id: str) -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT * FROM comments
-            WHERE post_id = ?
-            ORDER BY is_reply, like_count DESC, id
+            SELECT
+                c.*,
+                s.page_rank,
+                s.like_rank,
+                s.selected_by_default,
+                s.selected_by_likes,
+                s.selection_order
+            FROM comments c
+            LEFT JOIN comment_root_selections s
+                ON s.post_id = c.post_id AND s.comment_id = c.id
+            WHERE c.post_id = ?
+            ORDER BY
+                c.is_reply,
+                CASE WHEN c.is_reply = 0 THEN s.selection_order ELSE 0 END,
+                c.like_count DESC,
+                c.id
             """,
             (post_id,),
         ).fetchall()
