@@ -29,7 +29,7 @@ import store
 MYBLOG_API = "https://weibo.com/ajax/statuses/mymblog"
 SHOW_API = "https://weibo.com/ajax/statuses/show"
 LONGTEXT_API = "https://weibo.com/ajax/statuses/longtext"
-SEARCH_API = "https://m.weibo.cn/api/container/getIndex"
+SEARCH_API = "https://s.weibo.com/weibo"
 
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -46,6 +46,7 @@ REQUEST_CATEGORIES = {
     "/ajax/statuses/longtext": "longtext",
     "/ajax/statuses/buildComments": "comments",
     "/api/container/getIndex": "search",
+    "/weibo": "search",
 }
 
 
@@ -323,23 +324,141 @@ def search_mblogs(data: dict) -> list[dict]:
     return found
 
 
+def _search_card_text(fragment: str) -> str:
+    fragment = re.sub(
+        r'<img\b[^>]*\balt="([^"]*)"[^>]*>',
+        r"\1",
+        fragment or "",
+        flags=re.IGNORECASE,
+    )
+    return clean_text(fragment)
+
+
+def _search_action_count(card: str, action: str) -> int:
+    match = re.search(
+        rf'action-type="{re.escape(action)}"[^>]*>(.*?)</a>',
+        card,
+        flags=re.DOTALL,
+    )
+    if not match:
+        return 0
+    values = re.findall(r"\d+", _search_card_text(match.group(1)))
+    return int(values[-1]) if values else 0
+
+
+def parse_search_html(document: str) -> list[dict]:
+    """解析 s.weibo.com 第 1 页搜索结果卡片。"""
+    if "Sina Visitor System" in (document or ""):
+        raise WeiboAuthError("微博搜索要求重新验证登录态，请更新 Cookie。")
+
+    found: list[dict] = []
+    seen: set[str] = set()
+    cards = re.findall(
+        r'<div\s+class="card-wrap"[^>]*\bmid="(\d+)"[^>]*>(.*?)'
+        r"<!--/card-wrap-->",
+        document or "",
+        flags=re.DOTALL,
+    )
+    for mid, body in cards:
+        if mid in seen:
+            continue
+        seen.add(mid)
+
+        name_anchor = re.search(
+            r'<a\b[^>]*\bclass="name"[^>]*>.*?</a>',
+            body,
+            flags=re.DOTALL,
+        )
+        anchor_html = name_anchor.group(0) if name_anchor else body
+        uid_match = re.search(r'href="//weibo\.com/(\d+)', anchor_html)
+        name_match = re.search(r'nick-name="([^"]*)"', anchor_html)
+
+        content_match = re.search(
+            r'<p\b[^>]*node-type="feed_list_content"[^>]*>(.*?)</p>',
+            body,
+            flags=re.DOTALL,
+        )
+        from_match = re.search(
+            r'<div\s+class="from"[^>]*>(.*?)</div>',
+            body,
+            flags=re.DOTALL,
+        )
+        created_match = re.search(
+            r"<a\b[^>]*>(.*?)</a>",
+            from_match.group(1) if from_match else "",
+            flags=re.DOTALL,
+        )
+        like_match = re.search(
+            r'class="woo-like-count">([^<]+)<',
+            body,
+            flags=re.DOTALL,
+        )
+
+        found.append(
+            {
+                "id": mid,
+                "idstr": mid,
+                "mid": mid,
+                "user": {
+                    "id": uid_match.group(1) if uid_match else "",
+                    "screen_name": html.unescape(name_match.group(1))
+                    if name_match
+                    else "",
+                },
+                "created_at": _search_card_text(
+                    created_match.group(1) if created_match else ""
+                ),
+                "text_raw": _search_card_text(
+                    content_match.group(1) if content_match else ""
+                ),
+                "reposts_count": _search_action_count(
+                    body, "feed_list_forward"
+                ),
+                "comments_count": _search_action_count(
+                    body, "feed_list_comment"
+                ),
+                "attitudes_count": int(
+                    re.sub(r"\D", "", like_match.group(1)) or 0
+                )
+                if like_match
+                else 0,
+            }
+        )
+    return found
+
+
 def fetch_search(
     session: requests.Session,
     limiter: RateLimiter,
     query: str,
     page: int = 1,
 ) -> list[dict]:
-    data = request_json(
-        session,
-        limiter,
-        SEARCH_API,
-        {
-            "containerid": f"100103type=1&q={query}",
-            "page_type": "searchall",
-            "page": page,
-        },
-    )
-    return search_mblogs(data)
+    """从 PC 搜索页取一页结果，避免移动站 Cookie 域不兼容。"""
+    limiter.wait(SEARCH_API)
+    try:
+        resp = session.get(
+            SEARCH_API,
+            params={"q": query, "page": page},
+            headers={
+                "Accept": (
+                    "text/html,application/xhtml+xml,"
+                    "application/xml;q=0.9,*/*;q=0.8"
+                ),
+                "Referer": "https://weibo.com/",
+            },
+            timeout=20,
+        )
+    except requests.RequestException as exc:
+        raise WeiboBlocked(f"微博搜索网络异常，立即停止：{exc}") from exc
+    if resp.status_code in BLOCK_CODES:
+        raise WeiboBlocked(
+            f"微博搜索被风控/拒绝（HTTP {resp.status_code}），立即停止。"
+        )
+    if resp.status_code != 200:
+        raise WeiboBlocked(f"微博搜索返回 HTTP {resp.status_code}，立即停止。")
+    if urlsplit(resp.url).hostname != "s.weibo.com":
+        raise WeiboAuthError("微博搜索被重定向到登录页，请更新 Cookie。")
+    return parse_search_html(resp.text)
 
 
 COMMENTS_API = "https://weibo.com/ajax/statuses/buildComments"

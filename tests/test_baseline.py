@@ -208,6 +208,42 @@ class SearchParserTest(unittest.TestCase):
             ["1", "2"],
         )
 
+    def test_pc_search_cards_are_parsed(self) -> None:
+        from fetch_weibo import parse_search_html
+
+        document = """
+<!--card-wrap-->
+<div class="card-wrap" action-type="feed_list_item" mid="5362935746006446">
+  <a href="//weibo.com/3866429224?refer_flag=1001030103_"
+     class="name" nick-name="比格钱钱">比格钱钱</a>
+  <div class="from"><a href="//weibo.com/3866429224/test">11月08日 11:03</a></div>
+  <p class="txt" node-type="feed_list_content" nick-name="比格钱钱">
+    还好哥这几天没有吃屎<img alt="[便便]">
+  </p>
+  <a action-type="feed_list_forward"><span>转发图标</span> 6</a>
+  <a action-type="feed_list_comment"><span>评论图标</span> 37</a>
+  <span class="woo-like-count">424</span>
+</div>
+<!--/card-wrap-->
+"""
+        posts = parse_search_html(document)
+
+        self.assertEqual(len(posts), 1)
+        self.assertEqual(posts[0]["id"], "5362935746006446")
+        self.assertEqual(posts[0]["user"]["id"], config.TARGET_UID)
+        self.assertEqual(posts[0]["user"]["screen_name"], "比格钱钱")
+        self.assertEqual(posts[0]["created_at"], "11月08日 11:03")
+        self.assertEqual(posts[0]["text_raw"], "还好哥这几天没有吃屎[便便]")
+        self.assertEqual(posts[0]["reposts_count"], 6)
+        self.assertEqual(posts[0]["comments_count"], 37)
+        self.assertEqual(posts[0]["attitudes_count"], 424)
+
+    def test_visitor_page_raises_auth_error(self) -> None:
+        from fetch_weibo import WeiboAuthError, parse_search_html
+
+        with self.assertRaises(WeiboAuthError):
+            parse_search_html("<title>Sina Visitor System</title>")
+
 
 if __name__ == "__main__":
     unittest.main()
