@@ -44,6 +44,15 @@ $PYBIN wbq.py search 垃圾桶                       # 关键词检索（空格�
 
 通用 flags：`--limit N` 控制条数，`--json` 输出机器可读 JSON。
 
+多个 Git worktree 并行联网时，用同一个绝对路径设置中央请求账本：
+
+```bash
+export REQUEST_LEDGER_DB=/path/to/shared/request-ledger.db
+$PYBIN wbq.py request-status
+```
+
+语料数据库可以通过 `DB_PATH` 各自隔离，但 `REQUEST_LEDGER_DB` 必须共享。
+
 ## N宗罪条目维护（人工运营）
 
 N宗罪条目存放在 `memes.seed.toml`。每个条目可以是一项热梗，也可以是一类行为主题。新增条目：复制一段 `[[memes]]`，填写 `name`、`aliases`、`behavior_tags`、`exclude`、`search_queries` 等字段，然后执行：

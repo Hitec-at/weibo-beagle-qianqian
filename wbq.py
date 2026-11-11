@@ -237,6 +237,7 @@ def cmd_request_status(args) -> int:
     day = args.day or datetime.now(timezone(timedelta(hours=8))).date().isoformat()
     stats = store.weibo_request_stats(day)
     remaining = max(0, config.DAILY_MAX_REQUESTS - stats["total"])
+    print(f"账本：{config.LEDGER_DB_PATH}")
     print(f"{day} 已用 {stats['total']}/{config.DAILY_MAX_REQUESTS}，剩余 {remaining}")
     for category, count in stats["categories"].items():
         print(f"{category}: {count}")

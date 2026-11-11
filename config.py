@@ -86,4 +86,9 @@ DB_PATH = Path(_DB_RAW)
 if not DB_PATH.is_absolute():
     DB_PATH = BASE_DIR / DB_PATH
 
+_LEDGER_DB_RAW = os.environ.get("REQUEST_LEDGER_DB") or str(DB_PATH)
+LEDGER_DB_PATH = Path(_LEDGER_DB_RAW)
+if not LEDGER_DB_PATH.is_absolute():
+    LEDGER_DB_PATH = BASE_DIR / LEDGER_DB_PATH
+
 SAVE_RAW = os.environ.get("SAVE_RAW", "1") == "1"
