@@ -18,7 +18,8 @@ import random
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlsplit
 
 import requests
 
@@ -36,6 +37,14 @@ UA = (
 
 BLOCK_CODES = {403, 418, 429, 432}
 MAX_TRANSIENT_RETRY = 3
+CST = timezone(timedelta(hours=8))
+
+REQUEST_CATEGORIES = {
+    "/ajax/statuses/mymblog": "timeline",
+    "/ajax/statuses/show": "detail",
+    "/ajax/statuses/longtext": "longtext",
+    "/ajax/statuses/buildComments": "comments",
+}
 
 
 class WeiboAuthError(Exception):
@@ -50,9 +59,21 @@ class RateLimiter:
     def __init__(self) -> None:
         self.total = 0
 
-    def wait(self) -> None:
-        if self.total >= config.DAILY_MAX_REQUESTS:
-            raise WeiboBlocked(f"已达单日请求上限 {config.DAILY_MAX_REQUESTS}，停止。明日再跑 incremental。")
+    def wait(self, url: str) -> None:
+        path = urlsplit(url).path
+        category = REQUEST_CATEGORIES.get(path, "other")
+        request_day = datetime.now(CST).date().isoformat()
+        reserved = store.reserve_weibo_request(
+            request_day,
+            category,
+            path,
+            config.DAILY_MAX_REQUESTS,
+        )
+        if reserved is None:
+            raise WeiboBlocked(
+                f"已达共享单日请求上限 {config.DAILY_MAX_REQUESTS}，停止。"
+                "请明日再运行，或先查看 request-status。"
+            )
         time.sleep(random.uniform(config.RATE_MIN_SEC, config.RATE_MAX_SEC))
         self.total += 1
 
@@ -77,7 +98,7 @@ def make_session() -> requests.Session:
 
 def request_json(session: requests.Session, limiter: RateLimiter, url: str, params: dict) -> dict:
     for attempt in range(1, MAX_TRANSIENT_RETRY + 1):
-        limiter.wait()
+        limiter.wait(url)
         try:
             resp = session.get(url, params=params, timeout=20)
         except requests.RequestException as exc:

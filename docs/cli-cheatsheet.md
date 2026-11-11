@@ -24,6 +24,8 @@ $PYBIN wbq.py fetch --mode snapshot --limit 5   # 只抓 5 页，测试用
 
 ```bash
 $PYBIN wbq.py stats                              # 库统计：总数/含图/视频/live/转发
+$PYBIN wbq.py request-status                     # 今日共享微博请求额度
+$PYBIN wbq.py request-status --day 2026-11-11    # 指定日期额度
 $PYBIN wbq.py clean-pics                         # 清理空图片项，修复因空 URL 产生的裂图
 $PYBIN wbq.py repair-media                       # 修复 mix_media_info 混合媒体的图片与视频
 $PYBIN wbq.py videos-warm --limit 30             # 预热 30 条视频直链，让首播更快
