@@ -46,6 +46,34 @@ CREATE TABLE IF NOT EXISTS comment_pics (
     fetched_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_comment_pics_post ON comment_pics(post_id);
+CREATE TABLE IF NOT EXISTS comments (
+    id TEXT PRIMARY KEY,
+    post_id TEXT NOT NULL,
+    root_id TEXT NOT NULL,
+    parent_id TEXT NOT NULL DEFAULT '',
+    user_name TEXT NOT NULL DEFAULT '',
+    text_plain TEXT NOT NULL DEFAULT '',
+    like_count INTEGER NOT NULL DEFAULT 0,
+    author_liked INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT '',
+    is_reply INTEGER NOT NULL DEFAULT 0,
+    reply_total INTEGER NOT NULL DEFAULT 0,
+    reply_saved INTEGER NOT NULL DEFAULT 0,
+    reply_complete INTEGER NOT NULL DEFAULT 0,
+    fetched_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
+CREATE INDEX IF NOT EXISTS idx_comments_root ON comments(root_id);
+CREATE TABLE IF NOT EXISTS comment_threads (
+    post_id TEXT PRIMARY KEY,
+    fetched_at TEXT NOT NULL,
+    source TEXT NOT NULL,
+    roots_seen INTEGER NOT NULL DEFAULT 0,
+    roots_selected INTEGER NOT NULL DEFAULT 0,
+    replies_saved INTEGER NOT NULL DEFAULT 0,
+    max_id TEXT NOT NULL DEFAULT '',
+    complete INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS memes (
     slug TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -403,6 +431,92 @@ def query_comment_pics(limit: int = 100) -> list[dict]:
             "SELECT * FROM comment_pics ORDER BY fetched_at DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def upsert_comment(comment: dict) -> None:
+    conn = connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO comments (
+                id, post_id, root_id, parent_id, user_name, text_plain,
+                like_count, author_liked, created_at, is_reply,
+                reply_total, reply_saved, reply_complete, fetched_at
+            ) VALUES (
+                :id, :post_id, :root_id, :parent_id, :user_name, :text_plain,
+                :like_count, :author_liked, :created_at, :is_reply,
+                :reply_total, :reply_saved, :reply_complete, :fetched_at
+            )
+            ON CONFLICT(id) DO UPDATE SET
+                text_plain = excluded.text_plain,
+                like_count = excluded.like_count,
+                author_liked = excluded.author_liked,
+                reply_total = excluded.reply_total,
+                reply_saved = excluded.reply_saved,
+                reply_complete = excluded.reply_complete,
+                fetched_at = excluded.fetched_at
+            """,
+            comment,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def upsert_comment_thread(thread: dict) -> None:
+    conn = connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO comment_threads (
+                post_id, fetched_at, source, roots_seen, roots_selected,
+                replies_saved, max_id, complete
+            ) VALUES (
+                :post_id, :fetched_at, :source, :roots_seen, :roots_selected,
+                :replies_saved, :max_id, :complete
+            )
+            ON CONFLICT(post_id) DO UPDATE SET
+                fetched_at = excluded.fetched_at,
+                source = excluded.source,
+                roots_seen = excluded.roots_seen,
+                roots_selected = excluded.roots_selected,
+                replies_saved = excluded.replies_saved,
+                max_id = excluded.max_id,
+                complete = excluded.complete
+            """,
+            thread,
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def comments_for_post(post_id: str) -> list[dict]:
+    conn = connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT * FROM comments
+            WHERE post_id = ?
+            ORDER BY is_reply, like_count DESC, id
+            """,
+            (post_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def comment_thread(post_id: str) -> dict | None:
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM comment_threads WHERE post_id = ?",
+            (post_id,),
+        ).fetchone()
+        return dict(row) if row else None
     finally:
         conn.close()
 

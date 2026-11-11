@@ -17,6 +17,7 @@ import argparse
 import json
 import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import config
 import filters
@@ -217,6 +218,36 @@ def cmd_comments(args) -> int:
     return 0
 
 
+def cmd_comments_pilot(args) -> int:
+    import comment_pilot
+    from fetch_weibo import WeiboAuthError, WeiboBlocked
+
+    store.init_db()
+    posts = comment_pilot.select_posts(limit=args.limit)
+    result = {
+        "selected_posts": len(posts),
+        "posts": [
+            {
+                "post_id": post["id"],
+                "reason": post["selection_reason"],
+                "comments_count": post["comments_count"],
+                "text": post.get("text_plain") or "",
+            }
+            for post in posts
+        ],
+    }
+    if args.fetch:
+        try:
+            result["fetch"] = comment_pilot.fetch(posts)
+        except (WeiboAuthError, WeiboBlocked) as exc:
+            print(f"[停止] {exc}", file=sys.stderr)
+            return 2
+    if args.output:
+        result["export"] = comment_pilot.export(posts, Path(args.output))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_stats(args) -> int:
     store.init_db()
     conn = store.connect()
@@ -383,6 +414,11 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--limit", type=int, default=100)
     c.add_argument("--json", action="store_true")
 
+    cp = sub.add_parser("comments-pilot", help="20条评论质量试跑")
+    cp.add_argument("--limit", type=int, default=20)
+    cp.add_argument("--fetch", action="store_true", help="联网抓取；默认只做离线选样")
+    cp.add_argument("--output", default=None, help="导出审核包的目录")
+
     s = sub.add_parser("photos", help="高清图筛选")
     s.add_argument("--threshold", type=int, default=None, help="转评总数阈值，默认取 config.PHOTO_MIN_ENGAGEMENT")
     s.add_argument("--limit", type=int, default=100)
@@ -434,6 +470,7 @@ def main(argv=None) -> int:
         "meme": cmd_meme,
         "interactions": cmd_interactions,
         "comments": cmd_comments,
+        "comments-pilot": cmd_comments_pilot,
         "search": cmd_search,
     }
     return handlers[args.cmd](args)
