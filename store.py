@@ -802,6 +802,70 @@ def baseline_candidate_stats(version: str) -> list[dict]:
         conn.close()
 
 
+def baseline_query_stats(version: str) -> list[dict]:
+    conn = connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                meme_slug,
+                source,
+                status,
+                query,
+                COUNT(DISTINCT post_id) AS post_count,
+                MIN(search_rank) AS best_rank,
+                MAX(search_rank) AS worst_rank,
+                ROUND(AVG(search_rank), 1) AS average_rank
+            FROM baseline_candidates
+            WHERE baseline_version = ?
+            GROUP BY meme_slug, source, status, query
+            ORDER BY meme_slug, source, status, query
+            """,
+            (version,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def baseline_review_rows(version: str) -> list[dict]:
+    conn = connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                c.meme_slug,
+                c.post_id,
+                c.source,
+                c.query,
+                c.search_rank,
+                c.matched_term,
+                c.status,
+                c.observed_at,
+                p.created_at,
+                p.text_plain,
+                p.reposts_count,
+                p.comments_count,
+                p.attitudes_count,
+                p.retweeted_user
+            FROM baseline_candidates c
+            LEFT JOIN posts p ON p.id = c.post_id
+            WHERE c.baseline_version = ?
+            ORDER BY
+                c.meme_slug,
+                CASE c.status WHEN 'published' THEN 0 ELSE 1 END,
+                c.source,
+                CASE WHEN c.search_rank IS NULL THEN 1 ELSE 0 END,
+                c.search_rank,
+                c.post_id
+            """,
+            (version,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
 def clear_rule_categories(post_id: str) -> None:
     conn = connect()
     try:
