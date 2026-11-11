@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import sqlite3
 
-from config import DB_PATH
+from config import DB_PATH, LEDGER_DB_PATH
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS posts (
@@ -97,10 +97,28 @@ CREATE TABLE IF NOT EXISTS post_categories (
 CREATE INDEX IF NOT EXISTS idx_post_categories_category ON post_categories(category);
 """
 
+LEDGER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS weibo_request_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_day TEXT NOT NULL,
+    category TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    requested_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_weibo_request_day ON weibo_request_ledger(request_day);
+"""
+
 
 def connect() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def connect_ledger() -> sqlite3.Connection:
+    LEDGER_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(LEDGER_DB_PATH))
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -122,6 +140,44 @@ def init_db() -> None:
         conn.commit()
     finally:
         conn.close()
+    ledger = connect_ledger()
+    try:
+        ledger.executescript(LEDGER_SCHEMA)
+        if LEDGER_DB_PATH != DB_PATH:
+            existing = ledger.execute(
+                "SELECT COUNT(*) FROM weibo_request_ledger"
+            ).fetchone()[0]
+            if existing == 0:
+                corpus = connect()
+                try:
+                    rows = corpus.execute(
+                        """
+                        SELECT request_day, category, endpoint, requested_at
+                        FROM weibo_request_ledger
+                        """
+                    ).fetchall()
+                finally:
+                    corpus.close()
+                if rows:
+                    ledger.executemany(
+                        """
+                        INSERT INTO weibo_request_ledger
+                            (request_day, category, endpoint, requested_at)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        [
+                            (
+                                row["request_day"],
+                                row["category"],
+                                row["endpoint"],
+                                row["requested_at"],
+                            )
+                            for row in rows
+                        ],
+                    )
+        ledger.commit()
+    finally:
+        ledger.close()
 
 
 def get_meta(key: str, default: str | None = None) -> str | None:
@@ -589,7 +645,7 @@ def reserve_weibo_request(
     daily_limit: int,
 ) -> int | None:
     """原子预占一条当日请求额度，成功时返回预占后的累计请求数。"""
-    conn = connect()
+    conn = connect_ledger()
     try:
         conn.execute("BEGIN IMMEDIATE")
         used = conn.execute(
@@ -617,7 +673,7 @@ def reserve_weibo_request(
 
 
 def weibo_request_stats(request_day: str) -> dict:
-    conn = connect()
+    conn = connect_ledger()
     try:
         rows = conn.execute(
             """

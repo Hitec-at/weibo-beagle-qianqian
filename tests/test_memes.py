@@ -26,7 +26,9 @@ class CuratedSyncTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.old_db_path = store.DB_PATH
+        self.old_ledger_path = store.LEDGER_DB_PATH
         store.DB_PATH = Path(self.temp_dir.name) / "test.db"
+        store.LEDGER_DB_PATH = Path(self.temp_dir.name) / "ledger.db"
         store.init_db()
         conn = store.connect()
         try:
@@ -45,6 +47,7 @@ class CuratedSyncTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         store.DB_PATH = self.old_db_path
+        store.LEDGER_DB_PATH = self.old_ledger_path
         self.temp_dir.cleanup()
 
     def _seed(self, post_ids: list[str]) -> Path:
