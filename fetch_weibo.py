@@ -29,6 +29,7 @@ import store
 MYBLOG_API = "https://weibo.com/ajax/statuses/mymblog"
 SHOW_API = "https://weibo.com/ajax/statuses/show"
 LONGTEXT_API = "https://weibo.com/ajax/statuses/longtext"
+SEARCH_API = "https://m.weibo.cn/api/container/getIndex"
 
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -44,6 +45,7 @@ REQUEST_CATEGORIES = {
     "/ajax/statuses/show": "detail",
     "/ajax/statuses/longtext": "longtext",
     "/ajax/statuses/buildComments": "comments",
+    "/api/container/getIndex": "search",
 }
 
 
@@ -283,6 +285,51 @@ def fetch_mymblog(session: requests.Session, limiter: RateLimiter, page: int) ->
 
 def fetch_show(session: requests.Session, limiter: RateLimiter, pid: str) -> dict:
     return request_json(session, limiter, SHOW_API, {"id": pid})
+
+
+def search_mblogs(data: dict) -> list[dict]:
+    """从微博搜索结果中递归提取 mblog，兼容 card_group。"""
+    found: list[dict] = []
+    seen: set[str] = set()
+
+    def visit(cards: list[dict]) -> None:
+        for card in cards:
+            mblog = card.get("mblog")
+            if isinstance(mblog, dict):
+                pid = str(
+                    mblog.get("idstr")
+                    or mblog.get("id")
+                    or mblog.get("mid")
+                    or ""
+                )
+                if pid and pid not in seen:
+                    found.append(mblog)
+                    seen.add(pid)
+            children = card.get("card_group")
+            if isinstance(children, list):
+                visit(children)
+
+    visit((data.get("data") or {}).get("cards") or [])
+    return found
+
+
+def fetch_search(
+    session: requests.Session,
+    limiter: RateLimiter,
+    query: str,
+    page: int = 1,
+) -> list[dict]:
+    data = request_json(
+        session,
+        limiter,
+        SEARCH_API,
+        {
+            "containerid": f"100103type=1&q={query}",
+            "page_type": "searchall",
+            "page": page,
+        },
+    )
+    return search_mblogs(data)
 
 
 COMMENTS_API = "https://weibo.com/ajax/statuses/buildComments"

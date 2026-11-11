@@ -58,19 +58,29 @@ def sync(seed_path: Path | str = SEED_PATH) -> list[dict]:
         excludes = _unique(item.get("exclude") or [])
         search_queries = _unique(item.get("search_queries") or [])
         match_mode = str(item.get("match_mode") or "rule").strip()
-        if match_mode not in {"rule", "curated"}:
-            raise ValueError(f"「{name}」的 match_mode 必须是 rule 或 curated")
+        if match_mode not in {"rule", "curated", "mixed"}:
+            raise ValueError(
+                f"「{name}」的 match_mode 必须是 rule、curated 或 mixed"
+            )
         curated_ids = _unique(item.get("curated_post_ids") or [])
         if match_mode == "curated" and not curated_ids:
             raise ValueError(f"「{name}」使用 curated 模式时必须提供 curated_post_ids")
         if match_mode == "rule" and curated_ids:
             raise ValueError(f"「{name}」使用 rule 模式时不能提供 curated_post_ids")
+        auto_publish_terms = _unique(item.get("auto_publish_terms") or [])
+        candidate_terms = _unique(item.get("candidate_terms") or [])
+        if match_mode == "mixed" and not auto_publish_terms:
+            raise ValueError(f"「{name}」使用 mixed 模式时必须提供 auto_publish_terms")
+        if match_mode != "mixed" and (auto_publish_terms or candidate_terms):
+            raise ValueError(
+                f"「{name}」只有 mixed 模式可以提供 auto_publish_terms/candidate_terms"
+            )
         terms = _unique([name, *user_aliases])
         rep_url = str(item.get("representative_url") or "").strip()
         rep_mid = _mid_from_url(rep_url)
         rep_post = store.find_post_by_mid(rep_mid) if rep_mid else None
         curated_posts: list[dict] = []
-        if match_mode == "curated":
+        if match_mode in {"curated", "mixed"}:
             curated_posts = [store.get_post(post_id) or {} for post_id in curated_ids]
             missing = [
                 post_id
@@ -105,7 +115,7 @@ def sync(seed_path: Path | str = SEED_PATH) -> list[dict]:
         store.clear_generated_links(slug)
         matched_ids: set[str] = set()
         term_counts: dict[str, int] = {}
-        if match_mode == "curated":
+        if match_mode in {"curated", "mixed"}:
             for post in curated_posts:
                 store.link_post_meme(
                     post["id"],
@@ -114,8 +124,9 @@ def sync(seed_path: Path | str = SEED_PATH) -> list[dict]:
                     matched_by="curated",
                 )
                 matched_ids.add(post["id"])
-        else:
-            for term in terms:
+        if match_mode in {"mixed", "rule"}:
+            rule_terms = auto_publish_terms if match_mode == "mixed" else terms
+            for term in rule_terms:
                 rows = store.find_posts_by_text(term, tuple(excludes))
                 if rows:
                     term_counts[term] = len(rows)

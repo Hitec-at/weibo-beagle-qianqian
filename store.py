@@ -71,6 +71,28 @@ CREATE TABLE IF NOT EXISTS post_memes (
     PRIMARY KEY (post_id, meme_slug)
 );
 CREATE INDEX IF NOT EXISTS idx_post_memes_meme ON post_memes(meme_slug);
+CREATE TABLE IF NOT EXISTS baseline_runs (
+    version TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    snapshot_cutoff TEXT NOT NULL,
+    summary_json TEXT NOT NULL DEFAULT '{}'
+);
+CREATE TABLE IF NOT EXISTS baseline_candidates (
+    baseline_version TEXT NOT NULL,
+    post_id TEXT NOT NULL,
+    meme_slug TEXT NOT NULL,
+    source TEXT NOT NULL,
+    query TEXT NOT NULL DEFAULT '',
+    search_rank INTEGER,
+    matched_term TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL,
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY (
+        baseline_version, post_id, meme_slug, source, query
+    )
+);
+CREATE INDEX IF NOT EXISTS idx_baseline_candidates_meme
+    ON baseline_candidates(baseline_version, meme_slug);
 CREATE TABLE IF NOT EXISTS video_cache (
     key TEXT PRIMARY KEY,
     url TEXT NOT NULL,
@@ -559,6 +581,109 @@ def get_post_meme_links(post_id: str) -> list[dict]:
             (post_id,),
         ).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def create_baseline_run(version: str, snapshot_cutoff: str) -> None:
+    conn = connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO baseline_runs
+                (version, created_at, snapshot_cutoff, summary_json)
+            VALUES (?, datetime('now'), ?, '{}')
+            """,
+            (version, snapshot_cutoff),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def add_baseline_candidate(
+    baseline_version: str,
+    post_id: str,
+    meme_slug: str,
+    source: str,
+    query: str,
+    matched_term: str,
+    status: str,
+    search_rank: int | None = None,
+) -> None:
+    conn = connect()
+    try:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO baseline_candidates
+                (
+                    baseline_version, post_id, meme_slug, source, query,
+                    search_rank, matched_term, status, observed_at
+                )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (
+                baseline_version,
+                post_id,
+                meme_slug,
+                source,
+                query,
+                search_rank,
+                matched_term,
+                status,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def finish_baseline_run(version: str, summary: dict) -> None:
+    conn = connect()
+    try:
+        conn.execute(
+            "UPDATE baseline_runs SET summary_json = ? WHERE version = ?",
+            (json.dumps(summary, ensure_ascii=False), version),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_baseline_run(version: str) -> dict | None:
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM baseline_runs WHERE version = ?",
+            (version,),
+        ).fetchone()
+        if not row:
+            return None
+        result = dict(row)
+        result["summary"] = json.loads(result.pop("summary_json") or "{}")
+        return result
+    finally:
+        conn.close()
+
+
+def baseline_candidate_stats(version: str) -> list[dict]:
+    conn = connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT
+                meme_slug,
+                status,
+                source,
+                COUNT(DISTINCT post_id) AS post_count
+            FROM baseline_candidates
+            WHERE baseline_version = ?
+            GROUP BY meme_slug, status, source
+            ORDER BY meme_slug, status, source
+            """,
+            (version,),
+        ).fetchall()
+        return [dict(row) for row in rows]
     finally:
         conn.close()
 
