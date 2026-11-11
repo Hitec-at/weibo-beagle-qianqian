@@ -21,6 +21,14 @@ class MemeSeedTest(unittest.TestCase):
             "https://weibo.com/3866429224/5333186169013964",
         )
 
+    def test_audited_false_positive_exclusions_are_registered(self) -> None:
+        seed = {item["slug"]: item for item in memes.load_seed()}
+
+        self.assertIn("猫咪领养", seed["chishi"]["exclude"])
+        self.assertIn("我偷偷吃", seed["touchi"]["exclude"])
+        self.assertIn("发小的狗", seed["pangshou-erxiangxing"]["exclude"])
+        self.assertIn("11岁的边牧", seed["pangshou-erxiangxing"]["exclude"])
+
 
 class CuratedSyncTest(unittest.TestCase):
     def setUp(self) -> None:

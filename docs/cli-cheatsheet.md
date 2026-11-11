@@ -61,13 +61,20 @@ N宗罪条目存放在 `memes.seed.toml`。每个条目可以是一项热梗，�
 $PYBIN wbq.py memes-import                       # 导入种子并按触发词重建关联
 $PYBIN wbq.py baseline build --version baseline-v1
                                                   # 只用本地库构建并冻结 baseline
-$PYBIN wbq.py baseline build --version baseline-v1-search --search-pages 1
-                                                  # 显式访问微博搜索；消耗共享请求额度
+$PYBIN wbq.py baseline probe --output data/search-probe-v2.json
+                                                  # 每个唯一搜索词只取 1 页；消耗共享请求额度
+$PYBIN wbq.py baseline build --version baseline-v2 \
+    --search-evidence data/search-probe-v2.json
+                                                  # 离线消费完整 probe 证据并冻结 v2
 $PYBIN wbq.py baseline report --version baseline-v1
-                                                  # 查看公开/候选来源统计
+                                                  # 查看公开/候选来源及查询排名统计
+$PYBIN wbq.py baseline review --version baseline-v2 --output dist/baseline-v2-review
+                                                  # 导出 JSON/CSV/Markdown 人工审核清单
 ```
 
 `slug` 用于专题页 URL（`/meme/<slug>`）；不填时默认使用 `name`。代表微博的 `representative_url` 尚未入库时会显示“尚未入库”，抓取到对应 mid 后重新导入即可自动关联。
+
+搜索 probe 先检查 `request-status`，并让 `REQUEST_LEDGER_DB` 指向共享账本。probe 只记录完整结果和一页排名；风控、Cookie 失效、400 或额度耗尽会立即停止。未完成的证据可用于排查，但不能构建 baseline。`baseline build --search-pages 1` 仍保留为一体化入口，但推荐的审计流程是先 probe、保存证据，再离线 build。
 
 ## 评论图片（骨架，待全量入库后启用）
 

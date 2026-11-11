@@ -280,12 +280,30 @@ def cmd_request_status(args) -> int:
 
 def cmd_baseline(args) -> int:
     import baseline
+    from fetch_weibo import WeiboAuthError, WeiboBlocked
 
     try:
         if args.baseline_cmd == "build":
-            result = baseline.build(args.version, search_pages=args.search_pages)
+            result = baseline.build(
+                args.version,
+                search_pages=args.search_pages,
+                search_evidence=args.search_evidence,
+            )
+        elif args.baseline_cmd == "probe":
+            result = baseline.probe_search(
+                label=args.label or args.output,
+                output_path=args.output,
+            )
+        elif args.baseline_cmd == "review":
+            result = baseline.export_review(args.version, args.output)
         else:
             result = baseline.report(args.version)
+    except WeiboAuthError as exc:
+        print(f"[Cookie] {exc}", file=sys.stderr)
+        return 2
+    except WeiboBlocked as exc:
+        print(f"[停止] {exc}", file=sys.stderr)
+        return 3
     except (OSError, ValueError) as exc:
         print(f"[baseline] 失败：{exc}", file=sys.stderr)
         return 1
@@ -390,11 +408,23 @@ def build_parser() -> argparse.ArgumentParser:
     blb.add_argument(
         "--search-pages",
         type=int,
+        choices=(0, 1),
         default=0,
-        help="每个微博搜索词抓取的页数；0 表示不联网",
+        help="受控联网 probe 仅允许 1 页；0 表示离线构建",
+    )
+    blb.add_argument(
+        "--search-evidence",
+        default=None,
+        help="读取已保存的一页 probe 证据离线构建",
     )
     blr = bls.add_parser("report", help="查看 baseline 报告")
     blr.add_argument("--version", required=True, help="baseline 版本")
+    blp = bls.add_parser("probe", help="对每个唯一搜索词执行一次一页 probe")
+    blp.add_argument("--output", required=True, help="证据 JSON 输出路径")
+    blp.add_argument("--label", default=None, help="证据标签")
+    blv = bls.add_parser("review", help="导出人工审核清单")
+    blv.add_argument("--version", required=True)
+    blv.add_argument("--output", required=True, help="审核清单输出目录")
 
     sub.add_parser("clean-pics", help="清理 pics_json 中 thumb/url 都为空的图片项")
 
