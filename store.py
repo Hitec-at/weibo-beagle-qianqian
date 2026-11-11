@@ -78,6 +78,14 @@ CREATE TABLE IF NOT EXISTS video_cache (
     expires_at INTEGER NOT NULL DEFAULT 0,
     fetched_at TEXT
 );
+CREATE TABLE IF NOT EXISTS weibo_request_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    request_day TEXT NOT NULL,
+    category TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    requested_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_weibo_request_day ON weibo_request_ledger(request_day);
 CREATE TABLE IF NOT EXISTS post_categories (
     post_id TEXT NOT NULL,
     category TEXT NOT NULL,
@@ -570,6 +578,65 @@ def invalidate_video_cache(key: str) -> None:
     try:
         conn.execute("UPDATE video_cache SET expires_at = 0 WHERE key = ?", (key,))
         conn.commit()
+    finally:
+        conn.close()
+
+
+def reserve_weibo_request(
+    request_day: str,
+    category: str,
+    endpoint: str,
+    daily_limit: int,
+) -> int | None:
+    """原子预占一条当日请求额度，成功时返回预占后的累计请求数。"""
+    conn = connect()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        used = conn.execute(
+            "SELECT COUNT(*) FROM weibo_request_ledger WHERE request_day = ?",
+            (request_day,),
+        ).fetchone()[0]
+        if used >= daily_limit:
+            conn.rollback()
+            return None
+        conn.execute(
+            """
+            INSERT INTO weibo_request_ledger
+                (request_day, category, endpoint, requested_at)
+            VALUES (?, ?, ?, datetime('now'))
+            """,
+            (request_day, category, endpoint),
+        )
+        conn.commit()
+        return used + 1
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def weibo_request_stats(request_day: str) -> dict:
+    conn = connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT category, COUNT(*) AS request_count
+            FROM weibo_request_ledger
+            WHERE request_day = ?
+            GROUP BY category
+            ORDER BY category
+            """,
+            (request_day,),
+        ).fetchall()
+        categories = {
+            row["category"]: row["request_count"] for row in rows
+        }
+        return {
+            "day": request_day,
+            "total": sum(categories.values()),
+            "categories": categories,
+        }
     finally:
         conn.close()
 

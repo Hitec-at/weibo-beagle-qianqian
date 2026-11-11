@@ -232,6 +232,17 @@ def cmd_stats(args) -> int:
     return 0
 
 
+def cmd_request_status(args) -> int:
+    store.init_db()
+    day = args.day or datetime.now(timezone(timedelta(hours=8))).date().isoformat()
+    stats = store.weibo_request_stats(day)
+    remaining = max(0, config.DAILY_MAX_REQUESTS - stats["total"])
+    print(f"{day} 已用 {stats['total']}/{config.DAILY_MAX_REQUESTS}，剩余 {remaining}")
+    for category, count in stats["categories"].items():
+        print(f"{category}: {count}")
+    return 0
+
+
 def cmd_clean_pics(args) -> int:
     store.init_db()
     result = store.clean_empty_pics()
@@ -319,6 +330,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("stats", help="库统计")
 
+    rs = sub.add_parser("request-status", help="查看共享微博请求额度")
+    rs.add_argument("--day", default=None, help="日期 YYYY-MM-DD，默认今天（上海时区）")
+
     sub.add_parser("clean-pics", help="清理 pics_json 中 thumb/url 都为空的图片项")
 
     sub.add_parser("repair-media", help="修复 mix_media_info 混合媒体的图片与视频标记")
@@ -375,6 +389,7 @@ def main(argv=None) -> int:
     handlers = {
         "fetch": cmd_fetch,
         "stats": cmd_stats,
+        "request-status": cmd_request_status,
         "clean-pics": cmd_clean_pics,
         "repair-media": cmd_repair_media,
         "videos-warm": cmd_videos_warm,
