@@ -224,6 +224,7 @@ def cmd_comments_pilot(args) -> int:
 
     store.init_db()
     posts = comment_pilot.select_posts(limit=args.limit)
+    exit_code = 0
     result = {
         "selected_posts": len(posts),
         "posts": [
@@ -241,11 +242,11 @@ def cmd_comments_pilot(args) -> int:
             result["fetch"] = comment_pilot.fetch(posts)
         except (WeiboAuthError, WeiboBlocked) as exc:
             print(f"[停止] {exc}", file=sys.stderr)
-            return 2
+            exit_code = 2
     if args.output:
         result["export"] = comment_pilot.export(posts, Path(args.output))
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0
+    return exit_code
 
 
 def cmd_stats(args) -> int:
@@ -445,7 +446,13 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--json", action="store_true")
 
     cp = sub.add_parser("comments-pilot", help="20条评论质量试跑")
-    cp.add_argument("--limit", type=int, default=20)
+    cp.add_argument(
+        "--limit",
+        type=int,
+        choices=range(1, 21),
+        default=20,
+        help="样本数，最多 20",
+    )
     cp.add_argument("--fetch", action="store_true", help="联网抓取；默认只做离线选样")
     cp.add_argument("--output", default=None, help="导出审核包的目录")
 

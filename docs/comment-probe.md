@@ -1,5 +1,8 @@
 # 评论接口探测记录（2026-11-10）
 
+首轮离线与联网质量试跑结论另见
+[`comment-pilot-2026-11-11.md`](comment-pilot-2026-11-11.md)。
+
 ## 可用的一级评论请求
 
 接口：`https://weibo.com/ajax/statuses/buildComments`

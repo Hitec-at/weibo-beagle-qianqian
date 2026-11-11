@@ -98,14 +98,22 @@ def make_session() -> requests.Session:
     return s
 
 
-def request_json(session: requests.Session, limiter: RateLimiter, url: str, params: dict) -> dict:
-    for attempt in range(1, MAX_TRANSIENT_RETRY + 1):
+def request_json(
+    session: requests.Session,
+    limiter: RateLimiter,
+    url: str,
+    params: dict,
+    max_attempts: int = MAX_TRANSIENT_RETRY,
+) -> dict:
+    if max_attempts < 1:
+        raise ValueError("max_attempts 必须至少为 1")
+    for attempt in range(1, max_attempts + 1):
         limiter.wait(url)
         try:
             resp = session.get(url, params=params, timeout=20)
         except requests.RequestException as exc:
             print(f"网络异常：{exc}", flush=True)
-            if attempt == MAX_TRANSIENT_RETRY:
+            if attempt == max_attempts:
                 raise WeiboBlocked("网络持续异常，已停止。")
             time.sleep(60)
             continue
@@ -122,6 +130,8 @@ def request_json(session: requests.Session, limiter: RateLimiter, url: str, para
         if code == 400:
             raise WeiboBlocked("接口返回 400（参数错误），已停止；请先核对请求参数，不要重试。")
         if code != 200:
+            if attempt == max_attempts:
+                raise WeiboBlocked(f"HTTP {code}，已停止，不继续重试。")
             print(f"HTTP {code}（第 {attempt} 次），等待 60 秒重试…", flush=True)
             time.sleep(60)
             continue
@@ -335,7 +345,14 @@ def fetch_search(
 COMMENTS_API = "https://weibo.com/ajax/statuses/buildComments"
 
 
-def fetch_comments(session: requests.Session, limiter: RateLimiter, post_id: str, max_id: int = 0, count: int = 20):
+def fetch_comments(
+    session: requests.Session,
+    limiter: RateLimiter,
+    post_id: str,
+    max_id: int = 0,
+    count: int = 20,
+    max_attempts: int = MAX_TRANSIENT_RETRY,
+):
     """抓取单条微博的一级评论（一页）。
 
     已实测字段：like_counts（点赞数）、isLikedByMblogAuthor（博主是否点赞）、
@@ -353,6 +370,7 @@ def fetch_comments(session: requests.Session, limiter: RateLimiter, post_id: str
             "flow": 0,
             "max_id": max_id,
         },
+        max_attempts=max_attempts,
     )
     d = data.get("data") or []
     return d, data.get("max_id")
