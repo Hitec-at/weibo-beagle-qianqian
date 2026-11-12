@@ -27,3 +27,11 @@
 - [技术文档](docs/technical/README.md)
 - [项目语言表](docs/glossary.md)
 - [项目决策](docs/decisions/README.md)
+- [参与项目](CONTRIBUTING.md)
+- [安全说明](SECURITY.md)
+
+## License 与数据
+
+本项目代码使用 [MIT License](LICENSE)。微博正文、评论、图片、视频及其他第三方
+内容的权利仍归原作者或相应权利人；MIT License 不覆盖这些内容。公开的 `data-*`
+Release 是站点运行所需的公开微博数据快照，不包含抓取 Cookie 或生产 Token。
