@@ -15,6 +15,11 @@ import store
 
 BASE_DIR = Path(__file__).resolve().parent
 SEED_PATH = BASE_DIR / "memes.seed.toml"
+LEGACY_SLUGS = {"fanguoji": "fanlaji"}
+
+
+def canonical_slug(slug: str) -> str:
+    return LEGACY_SLUGS.get(slug, slug)
 
 
 def load_seed(path: Path | str = SEED_PATH) -> list[dict]:
@@ -46,6 +51,8 @@ def sync(seed_path: Path | str = SEED_PATH) -> list[dict]:
     """把种子文件同步到库，并重建规则或人工审定关联。"""
     seed = load_seed(seed_path)
     store.init_db()
+    for legacy_slug, canonical in LEGACY_SLUGS.items():
+        store.rename_meme_slug(legacy_slug, canonical)
     now = datetime.now(timezone.utc).isoformat()
     summary: list[dict] = []
 

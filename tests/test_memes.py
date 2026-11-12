@@ -43,14 +43,16 @@ class MemeSeedTest(unittest.TestCase):
         )
         self.assertNotIn("5296319899895967", seed["shouli"]["curated_post_ids"])
 
-    def test_fanguoji_is_curated_with_ten_posts(self) -> None:
+    def test_fanlaji_is_curated_with_ten_posts(self) -> None:
         seed = {item["slug"]: item for item in memes.load_seed()}
-        item = seed["fanguoji"]
+        item = seed["fanlaji"]
 
+        self.assertNotIn("fanguoji", seed)
         self.assertEqual(item["name"], "翻垃圾")
         self.assertEqual(item["match_mode"], "curated")
         self.assertEqual(len(item["curated_post_ids"]), 10)
         self.assertIn("单纯提到收垃圾、卖纸箱、垃圾桶镜头不算", item["boundary"])
+        self.assertEqual(memes.canonical_slug("fanguoji"), "fanlaji")
 
     def test_audited_false_positive_exclusions_are_registered(self) -> None:
         seed = {item["slug"]: item for item in memes.load_seed()}
@@ -116,6 +118,51 @@ curated_post_ids = [{ids}]
     def test_curated_mode_rejects_missing_post(self) -> None:
         with self.assertRaisesRegex(ValueError, "尚未入库：999"):
             memes.sync(self._seed(["1", "999"]))
+
+    def test_legacy_slug_migration_preserves_links_and_baseline(self) -> None:
+        conn = store.connect()
+        try:
+            conn.execute(
+                "INSERT INTO memes (slug, name) VALUES ('fanguoji', '翻垃圾')"
+            )
+            conn.execute(
+                """
+                INSERT INTO post_memes (
+                    post_id, meme_slug, matched_by, matched_term, confidence
+                ) VALUES ('1', 'fanguoji', 'curated', '人工审定', 1.0)
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO baseline_candidates (
+                    baseline_version, post_id, meme_slug, source, query,
+                    matched_term, status, observed_at
+                ) VALUES (
+                    'baseline-test', '1', 'fanguoji', 'local', '翻垃圾',
+                    '翻垃圾', 'candidate', '2026-11-12T00:00:00Z'
+                )
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        self.assertTrue(store.rename_meme_slug("fanguoji", "fanlaji"))
+        self.assertIsNone(store.get_meme("fanguoji"))
+        self.assertEqual(store.get_meme("fanlaji")["name"], "翻垃圾")
+
+        conn = store.connect()
+        try:
+            meme_slug = conn.execute(
+                "SELECT meme_slug FROM post_memes WHERE post_id = '1'"
+            ).fetchone()[0]
+            baseline_slug = conn.execute(
+                "SELECT meme_slug FROM baseline_candidates WHERE post_id = '1'"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(meme_slug, "fanlaji")
+        self.assertEqual(baseline_slug, "fanlaji")
 
 
 if __name__ == "__main__":
