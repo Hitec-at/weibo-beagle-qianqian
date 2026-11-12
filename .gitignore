@@ -1,6 +1,9 @@
 # 敏感配置
 .env
 *.cookie
+*.private
+site.private.toml
+.public-snapshot-denylist.txt
 
 # 数据与私有高清图存档
 data/
