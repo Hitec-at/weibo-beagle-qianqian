@@ -1,101 +1,29 @@
-# 微博站点 · 比格钱钱
+# 比格钱钱
 
-仅检索与推荐 `@比格钱钱`（UID 3866429224）公开微博的本地站点。公开只做「引用」：短引文 + 缩略图预览 + 跳转原微博，原图不落盘。
+## 简介
 
-项目自建术语和名称映射见 [项目统一语言表](docs/glossary.md)；影响架构或数据口径的取舍见 [项目决策记录](docs/decisions/README.md)。
+一个小站，专门翻 `@比格钱钱` 的公开微博。内容只做短引文和缩略预览，点开回到原微博。
 
-## 项目里程碑
+[访问站点](https://wb-bgqq.fly.dev)
 
-项目从一个本地微博检索原型，逐步演进为可分类、可部署、可持续补数据的公开索引站。
+## 多面钱钱
 
-| 阶段 | 关键行动 | 结果与贡献 |
-|---|---|---|
-| 数据原型 | 建立 Cookie 探测、全量快照、断点续抓和分类管线；设置 4–8 秒随机间隔、周期性休眠和单次请求上限 | 形成可复现的微博快照与 CLI；2026-11-10 基线收录 2,233 条微博 |
-| 检索产品化 | 实现热门、N宗罪、互动、高清图和搜索视图，加入服务端分页、排序与站内相关度 | 从全文匹配升级为按内容主题和互动关系浏览 |
-| N宗罪策展 | 用人工故事线定义罪名，支持别名、排除词、行为标签和一条微博关联多个罪名 | 建立吃屎、偷吃、收礼、胖瘦二象性等专题；胖瘦二象性首批人工审定 22 条 |
-| 多媒体体验 | 支持混合媒体、列表内视频播放、过期直链刷新、源微博内容和图片灯箱 | 图片可放大浏览，互动中的源微博图片与视频可原页查看或直接播放 |
-| 可持续交付 | 配置 CI、生产 Environment、只读数据快照、不可变 Release 和 Fly 部署 | 建立代码、数据与部署的审计链路；生产区域因 Fly 下线香港而从 `hkg` 切换到 `sin` |
-| 公开边界 | 图片只走白名单代理并提供缩略预览，原图跳转微博；Cookie、数据库和生产 Secret 不进入仓库或镜像 | 在保持检索价值的同时降低侵权、凭据泄露和账号风控风险 |
+- [热门](https://wb-bgqq.fly.dev/)：最近大家都在看
+- [N宗罪](https://wb-bgqq.fly.dev/memes)：钱钱犯过的那些事
+- [互动](https://wb-bgqq.fly.dev/interactions)：和比格犬受害者联盟的来往
+- [高清图](https://wb-bgqq.fly.dev/photos)：值得收藏的钱钱照片
 
-## 路线图
+## 正事进度
 
-[![项目全局路线图：从数据底座、主题策划、评论语义到泛化发现](docs/roadmap.svg)](docs/roadmap.svg)
+[![项目路线图：收齐旧账、理清罪状、串起故事](docs/roadmap.svg)](docs/roadmap.md)
 
-详细任务边界、验收条件和优先级见 [详细路线图](docs/roadmap.md)。
+## 一起整理
 
-## 快速开始
+发现漏掉的罪证或新故事线，欢迎[提交内容条目](https://github.com/Hitec-at/weibo-beagle-qianqian/issues/new)。请附上原微博链接、对应的 N宗罪，以及一句为什么属于它。
 
-```bash
-cd code/weibo-beagle-qianqian
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# 按 docs/cookie-sop.md 把 Cookie 填入 .env
-python fetch_weibo.py --mode probe        # 校验 Cookie
-python fetch_weibo.py --mode snapshot     # 全量快照
-uvicorn app.main:app --reload
-```
+## 文档
 
-浏览器打开 http://127.0.0.1:8000 。
-
-## 抓取命令
-
-- `--mode snapshot`：全量快照，翻页到底或到风控停止位。
-- `--mode incremental`：自上次检查点只取新增。
-- `--mode probe`：只发一次请求，校验 Cookie 并打印首条样本（核对视频 / live 字段）。
-- `--resume`：从检查点继续；`--limit N`：本次最多抓 N 页（试跑用）。
-
-## 检索视图
-
-- 首页 `/`：按热度推荐。
-- N宗罪 `/memes`：按人工维护的罪名/行为条目聚合，单个条目见 `/meme/{slug}`。
-- 全部罪证 `/memes/all`：保留原有 dsnmd / 吃屎 / 垃圾桶 / 抢小孩零食 匹配。
-- 互动 `/interactions`：正文或转发源出现 `比格犬受害者联盟`，并展示源微博正文、图片和可直接播放的视频。
-- 高清图 `/photos`：含图 + 非视频 + 非 live + 转评总数（转+评）> 阈值（PHOTO_MIN_ENGAGEMENT，当前 100）。
-
-所有列表卡片中的视频都可以直接播放；转发微博优先使用源微博视频，首次播放时如果直链过期会自动刷新。微博的混合媒体（`mix_media_info`）也受支持，文字、图片和视频会同时展示。
-
-N宗罪条目在 `memes.seed.toml` 中人工维护；每个条目可以是一项热梗，也可以是一类反复出现的行为，如偷吃、变胖、上秤称重，并支持 `aliases`、`exclude`、`search_queries` 和多标签关联。修改后执行 `wbq.py memes-import` 重新关联。关键词与阈值在 `config.py` 中维护。
-
-每个 tab 使用服务端分页：列表每页 20 条，高清图每页 24 条。抓取结束后会自动运行 `wbq.py classify`，把新入库微博归入热门、N宗罪、互动和高清图。
-
-## 每日任务
-
-- 每天 01:00 自动执行 `wbq.py fetch --mode snapshot --resume`，目标覆盖截至 2026-11-09 的存量微博（含更早历史）。
-- 每次抓取结束或触发日限停止后，自动执行分类整理，把新入库微博写入四个 tab。
-- 存量翻到底后输出“已覆盖截至 2026-11-09 的存量微博”，人工暂停定时任务即可。
-
-高清图分类方案暂列 TODO，详见 `docs/roadmap.md`。当前优先级是补全微博内容并稳定热门、N宗罪、互动三个 tab。
-
-## CLI 工具
-
-筛选管线已抽成命令行（`wbq.py`），Web 与 CLI 共用同一套筛选逻辑（`filters.py`）：
-
-```bash
-python wbq.py fetch --mode snapshot --resume      # 抓取（等价 fetch_weibo.py）
-python wbq.py stats                               # 库统计
-python wbq.py photos --threshold 50 --limit 20    # 高清图筛选，可临时调阈值
-python wbq.py memes --limit 50                    # N宗罪专题列表
-python wbq.py interactions --limit 50             # 互动
-python wbq.py search 垃圾桶 --limit 20 --json      # 关键词搜索 / JSON 导出
-```
-
-## 说明
-
-- 反爬：走 weibo.com PC 端接口，只复用 Cookie、单线程串行、4–8s 抖动、每 30 页休眠、单日 500 次上限，命中 403/418/429/432 立即停止。详见 `PLAN.md`。
-- Cookie 相当于账号密码，仅保存在本机 `.env`，勿外发、勿提交。
-
-## 云端部署
-
-采用 GitHub Actions 手动部署：本地把 SQLite 快照上传到私有 GitHub Release，
-Actions 下载并校验快照后构建单镜像，再发布到 Fly.io。
-
-```bash
-./scripts/prepare-snapshot.sh   # 检查、压缩并上传快照
-./deploy.sh                     # 触发 GitHub Actions
-```
-
-部署工作流只允许手动触发，不会在 `git push` 后自动发布。Cookie 和原始数据库不进入
-Git，也不进入公网实例。默认关闭云端视频直链刷新，过期视频回退到原微博或视频原页。
-
-首次账号准备、Fly 配置、验收与回滚见 `docs/deploy-sop.md`。
+- [路线图](docs/roadmap.md)
+- [技术文档](docs/technical/README.md)
+- [项目语言表](docs/glossary.md)
+- [项目决策](docs/decisions/README.md)
