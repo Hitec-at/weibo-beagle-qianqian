@@ -1,9 +1,9 @@
 # wbq.py 速查表
 
-所有命令都在项目根目录 `code/weibo-beagle-qianqian/` 下执行，统一用 venv 里的 Python：
+所有命令都在项目根目录下执行，统一用 venv 里的 Python：
 
 ```bash
-cd /Users/kerryyu/Documents/Kerry-TechWiki/code/weibo-beagle-qianqian
+cd weibo-beagle-qianqian
 export PYBIN=.venv/bin/python
 ```
 

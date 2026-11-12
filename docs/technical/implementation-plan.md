@@ -15,7 +15,8 @@
 
 ```text
 code/weibo-beagle-qianqian/
-  PLAN.md            # 本文件
+  docs/technical/    # 技术文档
+    implementation-plan.md # 本文件
   README.md          # 使用说明
   .gitignore         # 忽略 .env / data/ / 缓存
   .env.example       # 环境变量模板（真实 .env 不提交）
@@ -23,7 +24,7 @@ code/weibo-beagle-qianqian/
   config.py          # 配置、关键词、筛选阈值
   store.py           # SQLite 存储与查询
   fetch_weibo.py     # 抓取脚本（快照 + 增量 + probe）
-  docs/cookie-sop.md # Cookie 写入 SOP
+    cookie-sop.md    # Cookie 写入 SOP
   app/               # 后端服务（FastAPI）
   data/              # SQLite（不提交）
 ```
@@ -88,7 +89,7 @@ code/weibo-beagle-qianqian/
 ## 8. 已确认
 
 - [x] 后端技术栈：FastAPI + SQLite（`LIKE` 检索）。
-- [x] Cookie：由用户按 `docs/cookie-sop.md` 自行写入本机 `.env`，不在对话中明文传递。
+- [x] Cookie：由用户按 `docs/technical/cookie-sop.md` 自行写入本机 `.env`，不在对话中明文传递。
 - [x] 版权：公开只引用（短引文 + 缩略图预览 + 跳原链），原图不落盘。
 - [x] 高清图筛选：含图 + 非视频 + 非 live + 转评总数 > 200。
 

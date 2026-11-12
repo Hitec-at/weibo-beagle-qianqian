@@ -84,7 +84,7 @@ class RateLimiter:
 def make_session() -> requests.Session:
     cookie = (os.environ.get("WEIBO_COOKIE") or "").strip().strip('"')
     if not cookie:
-        raise WeiboAuthError("未找到 WEIBO_COOKIE，请按 docs/cookie-sop.md 写入 .env。")
+        raise WeiboAuthError("未找到 WEIBO_COOKIE，请按 docs/technical/cookie-sop.md 写入 .env。")
     s = requests.Session()
     s.headers.update(
         {
