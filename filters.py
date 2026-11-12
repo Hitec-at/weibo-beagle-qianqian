@@ -83,6 +83,34 @@ def interact_hits(text: str, retweeted_user: str) -> list[str]:
     return [kw for kw in config.INTERACT_KEYWORDS if kw in haystack]
 
 
+def interaction_subcategory_hits(
+    text: str, retweeted_user: str
+) -> list[tuple[str, list[str]]]:
+    """分类器用：返回命中的互动子分类及其关键词。"""
+    haystack = f"{text or ''}\n{retweeted_user or ''}"
+    result: list[tuple[str, list[str]]] = []
+    for slug, terms in config.INTERACTION_SUBCATEGORIES.items():
+        hits = [term for term in terms if term in haystack]
+        if hits:
+            result.append((slug, hits))
+    return result
+
+
+def curated_interaction_subcategories(post_id: str) -> list[str]:
+    """返回人工审定属于某条互动关系线的子分类。"""
+    return [
+        slug
+        for slug, post_ids in config.INTERACTION_CURATED_POSTS.items()
+        if post_id in post_ids
+    ]
+
+
+def entity_alias_hits(text: str) -> list[str]:
+    """返回正文中出现的钱钱实体别名。"""
+    haystack = text or ""
+    return [alias for alias in config.ENTITY_ALIASES if alias in haystack]
+
+
 def photo_match(post: dict, threshold: int | None = None) -> bool:
     """分类器用：与 photo_where 保持同一口径。"""
     t = config.PHOTO_MIN_ENGAGEMENT if threshold is None else threshold

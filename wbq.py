@@ -74,7 +74,8 @@ def cmd_fetch(args) -> int:
             print(
                 "已整理新入库微博："
                 f"{result['processed']} 条（热门 {result['hot']}、N宗罪 {result['memes']}、"
-                f"互动 {result['interactions']}、高清图 {result['photos']}）。"
+                f"互动 {result['interactions']}、萌钱CP {result['interaction_mengqian_cp']}、"
+                f"实体别名 {result['qianqian_aliases']}、高清图 {result['photos']}）。"
             )
         except Exception as exc:
             print(f"[分类] 失败：{exc}", file=sys.stderr)
@@ -383,7 +384,8 @@ def cmd_classify(args) -> int:
     result = classify.run(day=args.day, all_posts=args.all)
     print(
         f"已整理 {result['processed']} 条：热门 {result['hot']}、N宗罪 {result['memes']}、"
-        f"互动 {result['interactions']}、高清图 {result['photos']}。"
+        f"互动 {result['interactions']}、萌钱CP {result['interaction_mengqian_cp']}、"
+        f"实体别名 {result['qianqian_aliases']}、高清图 {result['photos']}。"
     )
     return 0
 

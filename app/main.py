@@ -634,9 +634,8 @@ def meme_detail(request: Request, slug: str, page: int = 1):
     )
 
 
-@app.get("/interactions")
-def interactions(request: Request, page: int = 1):
-    where, params = filters.category_where("interactions")
+def interaction_page(request: Request, page: int, category: str, title: str):
+    where, params = filters.category_where(category)
     total = store.count_posts(where, params)
     options = [("latest", "最新"), ("hot", "热门")]
     sort_control_data = sort_control(request, options, "latest")
@@ -649,13 +648,37 @@ def interactions(request: Request, page: int = 1):
         request,
         "list.html",
         {
-            "title": "与 @比格犬受害者联盟 的互动",
+            "title": title,
             "posts": rows,
             "grid": False,
             "show_source": True,
+            "subfilters": [
+                ("/interactions", "全部互动"),
+                ("/interactions/mengqian-cp", "萌钱CP"),
+            ],
             "pagination": pagination,
             "sort_control": sort_control_data,
         },
+    )
+
+
+@app.get("/interactions")
+def interactions(request: Request, page: int = 1):
+    return interaction_page(
+        request,
+        page,
+        "interactions",
+        "与 @比格犬受害者联盟 的互动",
+    )
+
+
+@app.get("/interactions/mengqian-cp")
+def interaction_mengqian_cp(request: Request, page: int = 1):
+    return interaction_page(
+        request,
+        page,
+        "interaction_mengqian_cp",
+        "萌钱CP",
     )
 
 

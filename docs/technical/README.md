@@ -14,6 +14,7 @@
 - [评论质量试跑结果](comment-pilot-2026-11-11.md)
 - [N宗罪 baseline v1 审核](baseline-reviews/2026-11-11-v1.md)
 - [N宗罪 baseline v2 审核](baseline-reviews/2026-11-11-v2.md)
+- [N宗罪 baseline v3 首批人工审核](baseline-reviews/2026-11-12-v3.md)
 
 ## 发布
 
