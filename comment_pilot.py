@@ -8,7 +8,8 @@ from pathlib import Path
 import filters
 import store
 
-PILOT_MAX_POSTS = 20
+COMMENT_MAX_POSTS = 20
+PILOT_MAX_POSTS = COMMENT_MAX_POSTS
 
 
 def _comment_id(comment: dict) -> str:
@@ -28,27 +29,51 @@ def _like_count(comment: dict) -> int:
 
 
 def select_posts(limit: int = 20) -> list[dict]:
-    """按现有 N宗罪和互动分层，以热度轮转选择，按 post id 去重。"""
-    if not 1 <= limit <= PILOT_MAX_POSTS:
-        raise ValueError(f"评论试跑最多选择 {PILOT_MAX_POSTS} 条微博")
+    """按新入库优先、N宗罪/互动分层轮转选择未处理的微博。"""
+    if not 1 <= limit <= COMMENT_MAX_POSTS:
+        raise ValueError(f"评论挖掘最多选择 {COMMENT_MAX_POSTS} 条微博")
+
+    def pending(rows: list[dict]) -> list[dict]:
+        return [
+            row
+            for row in rows
+            if (store.comment_thread(row["id"]) or {}).get("source") != "pilot"
+        ]
+
+    def priority(row: dict) -> tuple[str, int, int]:
+        return (
+            str(row.get("fetched_at") or ""),
+            int(row.get("ts") or 0),
+            int(row.get("comments_count") or 0),
+        )
 
     buckets: list[tuple[str, list[dict]]] = []
     for meme in store.list_memes():
-        rows = store.query_meme_posts(
-            meme["slug"],
-            limit=max(limit, 40),
-            order="hot",
+        rows = pending(
+            store.query_meme_posts(
+                meme["slug"],
+                limit=max(limit * 10, 200),
+                order="hot",
+            )
         )
-        buckets.append((f"N宗罪:{meme['name']}", rows))
+        if rows:
+            buckets.append(
+                (f"N宗罪:{meme['name']}", sorted(rows, key=priority, reverse=True))
+            )
 
     where, params = filters.interact_where()
-    interactions = store.query_posts(
-        where,
-        params,
-        limit=max(limit, 40),
-        order="hot",
+    interactions = pending(
+        store.query_posts(
+            where,
+            params,
+            limit=max(limit * 10, 200),
+            order="hot",
+        )
     )
-    buckets.append(("互动", interactions))
+    if interactions:
+        buckets.append(("互动", sorted(interactions, key=priority, reverse=True)))
+
+    buckets.sort(key=lambda bucket: priority(bucket[1][0]), reverse=True)
 
     selected: list[dict] = []
     seen: set[str] = set()
@@ -80,12 +105,12 @@ def select_posts(limit: int = 20) -> list[dict]:
     return selected
 
 
-def _select_root_comments(
+def _root_metadata(
     comments: list[dict],
     default_count: int = 10,
     top_count: int = 5,
-) -> list[dict]:
-    """返回根评论及入选依据，保留首页位置和点赞名次。"""
+) -> dict[str, dict]:
+    """返回单页全部根评论及其首页位次、点赞位次和入选依据。"""
     by_id: dict[str, dict] = {}
     page_rank: dict[str, int] = {}
     for index, comment in enumerate(comments, start=1):
@@ -101,28 +126,51 @@ def _select_root_comments(
     like_rank = {
         cid: rank for rank, cid in enumerate(like_order, start=1)
     }
-
-    selected: list[dict] = []
-    seen: set[str] = set()
     default_ids = {
         _comment_id(comment)
         for comment in comments[:default_count]
         if _comment_id(comment) in by_id
     }
+    top_like_ids = set(like_order[:top_count])
+    return {
+        cid: {
+            "comment": comment,
+            "page_rank": page_rank[cid],
+            "like_rank": like_rank[cid],
+            "selected_by_default": int(cid in default_ids),
+            "selected_by_likes": int(cid in top_like_ids),
+        }
+        for cid, comment in by_id.items()
+    }
+
+
+def _select_root_comments(
+    comments: list[dict],
+    default_count: int = 10,
+    top_count: int = 5,
+) -> list[dict]:
+    """返回根评论及入选依据，保留首页位置和点赞名次。"""
+    metadata = _root_metadata(comments, default_count, top_count)
+    like_order = sorted(
+        metadata,
+        key=lambda cid: (
+            metadata[cid]["like_rank"],
+            metadata[cid]["page_rank"],
+        ),
+    )
+    selected: list[dict] = []
+    seen: set[str] = set()
     candidates = [
         *(comments[:default_count]),
-        *(by_id[cid] for cid in like_order[:top_count]),
+        *(metadata[cid]["comment"] for cid in like_order[:top_count]),
     ]
     for comment in candidates:
         cid = _comment_id(comment)
-        if cid and cid not in seen:
+        if cid and cid in metadata and cid not in seen:
+            item = metadata[cid]
             selected.append(
                 {
-                    "comment": by_id[cid],
-                    "page_rank": page_rank[cid],
-                    "like_rank": like_rank[cid],
-                    "selected_by_default": int(cid in default_ids),
-                    "selected_by_likes": int(like_rank[cid] <= top_count),
+                    **item,
                     "selection_order": len(selected) + 1,
                 }
             )
@@ -146,7 +194,10 @@ def save_page(post_id: str, items: list[dict], max_id, source: str) -> dict:
     from fetch_weibo import clean_text
 
     fetched_at = datetime.now(timezone.utc).isoformat()
-    roots = _select_root_comments(items)
+    roots = sorted(
+        _root_metadata(items).values(),
+        key=lambda item: item["page_rank"],
+    )
     comment_rows: list[dict] = []
     selection_rows: list[dict] = []
     replies_saved = 0
@@ -203,7 +254,7 @@ def save_page(post_id: str, items: list[dict], max_id, source: str) -> dict:
                 "like_rank": selected["like_rank"],
                 "selected_by_default": selected["selected_by_default"],
                 "selected_by_likes": selected["selected_by_likes"],
-                "selection_order": selected["selection_order"],
+                "selection_order": selected["page_rank"],
                 "fetched_at": fetched_at,
             }
         )
@@ -240,7 +291,7 @@ def save_page(post_id: str, items: list[dict], max_id, source: str) -> dict:
         "fetched_at": fetched_at,
         "source": source,
         "roots_seen": len(items),
-        "roots_selected": len(comment_rows) - replies_saved,
+            "roots_selected": len(roots),
         "replies_saved": replies_saved,
         "max_id": str(max_id or ""),
         "complete": 0,
@@ -340,9 +391,10 @@ def export(posts: list[dict], output_dir: Path) -> dict:
     )
 
     lines = [
-        "# 评论质量试跑",
+        "# 评论挖掘审核包",
         "",
-        "说明：每条微博只取一级评论首页；点赞前 5 与默认前 10 取并集。"
+        "说明：每条微博只取一级评论首页；保存接口返回的全部根评论，"
+        "并标记默认前 10 与点赞前 5。"
         "二级回复仅包含接口内嵌部分，不能视为完整回复树。",
         "",
     ]
