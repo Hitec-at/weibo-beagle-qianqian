@@ -664,6 +664,67 @@ def get_meme(slug: str) -> dict | None:
         conn.close()
 
 
+def rename_meme_slug(old_slug: str, new_slug: str) -> bool:
+    """把旧 slug 的条目、微博关联和 baseline 证据迁移到新 slug。"""
+    if not old_slug or not new_slug or old_slug == new_slug:
+        return False
+
+    conn = connect()
+    try:
+        conn.execute("BEGIN")
+        old = conn.execute(
+            "SELECT slug FROM memes WHERE slug = ?", (old_slug,)
+        ).fetchone()
+        if not old:
+            conn.rollback()
+            return False
+
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO post_memes (
+                post_id, meme_slug, matched_by, matched_term, confidence, updated_at
+            )
+            SELECT post_id, ?, matched_by, matched_term, confidence, updated_at
+            FROM post_memes
+            WHERE meme_slug = ?
+            """,
+            (new_slug, old_slug),
+        )
+        conn.execute("DELETE FROM post_memes WHERE meme_slug = ?", (old_slug,))
+
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO baseline_candidates (
+                baseline_version, post_id, meme_slug, source, query,
+                search_rank, matched_term, status, observed_at
+            )
+            SELECT baseline_version, post_id, ?, source, query,
+                   search_rank, matched_term, status, observed_at
+            FROM baseline_candidates
+            WHERE meme_slug = ?
+            """,
+            (new_slug, old_slug),
+        )
+        conn.execute("DELETE FROM baseline_candidates WHERE meme_slug = ?", (old_slug,))
+
+        new = conn.execute(
+            "SELECT slug FROM memes WHERE slug = ?", (new_slug,)
+        ).fetchone()
+        if new:
+            conn.execute("DELETE FROM memes WHERE slug = ?", (old_slug,))
+        else:
+            conn.execute(
+                "UPDATE memes SET slug = ? WHERE slug = ?", (new_slug, old_slug)
+            )
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def clear_generated_links(slug: str) -> None:
     """重建前清除由同步流程生成的关键词与人工审定关联。"""
     conn = connect()

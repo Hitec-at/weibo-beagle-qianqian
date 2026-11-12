@@ -17,6 +17,7 @@ from fastapi.templating import Jinja2Templates
 
 import config
 import filters
+import memes
 import store
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -610,6 +611,10 @@ def memes_all(request: Request, page: int = 1):
 
 @app.get("/meme/{slug}")
 def meme_detail(request: Request, slug: str, page: int = 1):
+    canonical = memes.canonical_slug(slug)
+    if canonical != slug:
+        query = f"?{request.url.query}" if request.url.query else ""
+        return RedirectResponse(f"/meme/{canonical}{query}", status_code=308)
     meme = store.get_meme(slug)
     if not meme:
         raise HTTPException(status_code=404, detail="罪名专题不存在")
