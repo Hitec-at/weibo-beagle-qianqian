@@ -1,0 +1,59 @@
+{
+  "rules_version": "candidate-review-v1",
+  "examples": [
+    {
+      "post_id": "5341336321656934",
+      "meme_slug": "chishi",
+      "post_text": "下午进门看到此狗在门口全身发抖，看了看家里还挺好的没啥问题，吃了饭上厕所一看妹妹纸尿裤里面的屎被它吃了，难怪全身发抖",
+      "decision": "accept",
+      "confidence": 0.98,
+      "reason": "正文直接描述了吃纸尿裤中粪便的行为。",
+      "evidence": ["post.text 明确指出纸尿裤里面的屎被它吃了"]
+    },
+    {
+      "post_id": "5305779676776585",
+      "meme_slug": "touchi",
+      "post_text": "不抢零食的时候还是很受欢迎的",
+      "decision": "accept",
+      "confidence": 0.9,
+      "reason": "正文直接以抢零食描述其偷吃零食行为。",
+      "evidence": ["post.text 含“抢零食”"]
+    },
+    {
+      "post_id": "5296319899895967",
+      "meme_slug": "shouli",
+      "post_text": "弟弟的礼物🎁 感谢我素未谋面的互联网亲人",
+      "decision": "reject",
+      "confidence": 0.97,
+      "reason": "礼物收件人是弟弟，不是钱钱，不符合收礼条目。",
+      "evidence": ["post.text 明确写“弟弟的礼物”"]
+    },
+    {
+      "post_id": "5242051168049127",
+      "meme_slug": "pangshou-erxiangxing",
+      "post_text": "如何辨别自己有恋丑癖，当别人都在说钱钱丑的时候……他有五十斤……胖爪爪特别好看",
+      "decision": "reject",
+      "confidence": 0.95,
+      "reason": "内容是粉丝审美和称呼讨论，没有胖瘦循环的行为链。",
+      "evidence": ["正文主题是“恋丑癖”辨别，不是体重变化"]
+    },
+    {
+      "post_id": "5219209567277286",
+      "meme_slug": "pangshou-erxiangxing",
+      "post_text": "昨天偷吃太多了，今天就给他吃了半个罐头！饿他两天！",
+      "decision": "uncertain",
+      "confidence": 0.7,
+      "reason": "单条正文有放纵与节食的反差，但是否构成持续二象性需要相邻微博证据。",
+      "evidence": ["post.text 同时出现“偷吃太多”和“饿他两天”"]
+    },
+    {
+      "post_id": "5223004414149306",
+      "meme_slug": "pangshou-erxiangxing",
+      "post_text": "早上好🌞小胖狗～",
+      "decision": "uncertain",
+      "confidence": 0.6,
+      "reason": "只有单次“小胖狗”称呼，无法判断是否存在胖瘦变化。",
+      "evidence": ["post.text 只有“小胖狗”，没有体重或变化描述"]
+    }
+  ]
+}
