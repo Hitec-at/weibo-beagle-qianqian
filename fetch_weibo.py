@@ -58,11 +58,23 @@ class WeiboBlocked(Exception):
     """被风控拦截或接口异常，应立即停止。"""
 
 
+class StageBudgetExhausted(Exception):
+    """当前运行达到阶段预算，但共享日额度仍可留给后续步骤。"""
+
+
 class RateLimiter:
-    def __init__(self) -> None:
+    def __init__(self, max_requests: int | None = None) -> None:
+        if max_requests is not None and max_requests < 1:
+            raise ValueError("max_requests 必须至少为 1")
         self.total = 0
+        self.max_requests = max_requests
 
     def wait(self, url: str) -> None:
+        if self.max_requests is not None and self.total >= self.max_requests:
+            raise StageBudgetExhausted(
+                f"本轮已达到阶段请求预算 {self.max_requests}，停止本阶段；"
+                "共享单日额度仍可用于后续分析。"
+            )
         path = urlsplit(url).path
         category = REQUEST_CATEGORIES.get(path, "other")
         request_day = datetime.now(CST).date().isoformat()
@@ -516,10 +528,15 @@ def post_id(mblog: dict) -> str:
     return str(mblog.get("idstr") or mblog.get("id") or mblog.get("mid") or "")
 
 
-def run(mode: str, resume: bool, limit: int | None) -> None:
+def run(
+    mode: str,
+    resume: bool,
+    limit: int | None,
+    max_requests: int | None = None,
+) -> None:
     store.init_db()
     session = make_session()
-    limiter = RateLimiter()
+    limiter = RateLimiter(max_requests=max_requests)
     print(f"目标：抓取截至 {config.SNAPSHOT_CUTOFF} 的存量微博（含更早历史）。", flush=True)
 
     if mode == "probe":
@@ -628,10 +645,19 @@ def main() -> int:
     parser.add_argument("--mode", choices=["probe", "snapshot", "incremental"], default="snapshot")
     parser.add_argument("--resume", action="store_true", help="从检查点继续")
     parser.add_argument("--limit", type=int, default=None, help="本次最多抓取的页数")
+    parser.add_argument(
+        "--max-requests",
+        type=int,
+        default=None,
+        help="本次运行最多消耗的请求数，不影响共享单日上限",
+    )
     args = parser.parse_args()
     try:
-        run(args.mode, args.resume, args.limit)
+        run(args.mode, args.resume, args.limit, args.max_requests)
         return 0
+    except StageBudgetExhausted as exc:
+        print(f"[阶段预算] {exc}", file=sys.stderr)
+        return 4
     except WeiboAuthError as exc:
         print(f"[Cookie 问题] {exc}", file=sys.stderr)
         return 2
