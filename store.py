@@ -947,13 +947,10 @@ def baseline_review_rows(version: str) -> list[dict]:
         conn.close()
 
 
-def clear_rule_categories(post_id: str) -> None:
+def clear_post_categories(post_id: str) -> None:
     conn = connect()
     try:
-        conn.execute(
-            "DELETE FROM post_categories WHERE post_id = ? AND matched_by = 'rule'",
-            (post_id,),
-        )
+        conn.execute("DELETE FROM post_categories WHERE post_id = ?", (post_id,))
         conn.commit()
     finally:
         conn.close()

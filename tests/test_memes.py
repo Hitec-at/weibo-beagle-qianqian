@@ -14,12 +14,43 @@ class MemeSeedTest(unittest.TestCase):
         item = next(m for m in seed if m["slug"] == "pangshou-erxiangxing")
 
         self.assertEqual(item["match_mode"], "mixed")
-        self.assertEqual(len(item["curated_post_ids"]), 22)
-        self.assertEqual(len(set(item["curated_post_ids"])), 22)
+        self.assertEqual(len(item["curated_post_ids"]), 25)
+        self.assertEqual(len(set(item["curated_post_ids"])), 25)
         self.assertEqual(
             item["representative_url"],
             "https://weibo.com/3866429224/5333186169013964",
         )
+
+    def test_first_review_batch_is_recorded(self) -> None:
+        seed = {item["slug"]: item for item in memes.load_seed()}
+
+        self.assertEqual(
+            set(seed["chishi"]["curated_post_ids"]),
+            {"5341336321656934", "5358220445221881", "5278559430249600"},
+        )
+        self.assertEqual(
+            set(seed["touchi"]["curated_post_ids"]),
+            {"5305779676776585", "5302886017010419"},
+        )
+        self.assertEqual(
+            set(seed["shouli"]["curated_post_ids"]),
+            {
+                "5338393051399605",
+                "5271618083358631",
+                "5327445222758150",
+                "5304365923435602",
+            },
+        )
+        self.assertNotIn("5296319899895967", seed["shouli"]["curated_post_ids"])
+
+    def test_fanguoji_is_curated_with_ten_posts(self) -> None:
+        seed = {item["slug"]: item for item in memes.load_seed()}
+        item = seed["fanguoji"]
+
+        self.assertEqual(item["name"], "翻垃圾")
+        self.assertEqual(item["match_mode"], "curated")
+        self.assertEqual(len(item["curated_post_ids"]), 10)
+        self.assertIn("单纯提到收垃圾、卖纸箱、垃圾桶镜头不算", item["boundary"])
 
     def test_audited_false_positive_exclusions_are_registered(self) -> None:
         seed = {item["slug"]: item for item in memes.load_seed()}
