@@ -15,9 +15,12 @@ $PYBIN wbq.py fetch --mode snapshot             # 全量快照，从第 1 页开
 $PYBIN wbq.py fetch --mode snapshot --resume    # 从检查点续抓（日限 500 次触发后，下轮用它继续）
 $PYBIN wbq.py fetch --mode incremental          # 增量：自上次检查点起补新
 $PYBIN wbq.py fetch --mode snapshot --limit 5   # 只抓 5 页，测试用
+$PYBIN wbq.py fetch --mode snapshot --resume --max-requests 400
+                                                 # 本阶段最多 400 次请求，为后续分析预留日额度
 ```
 
-退出码：`0` 正常，`2` Cookie 失效，`3` 被风控/日限，`130` 手动中断（检查点已保存）。
+退出码：`0` 正常，`2` Cookie 失效，`3` 被风控/日限，`4` 达到本次阶段预算，
+`130` 手动中断（检查点已保存）。
 每次 fetch 结束（含日限中断）后会自动运行一次分类整理。
 
 ## 查看与筛选（纯读库，不联网）

@@ -50,11 +50,14 @@ def _emit(rows, as_json: bool) -> None:
 
 def cmd_fetch(args) -> int:
     from fetch_weibo import run as fetch_run
-    from fetch_weibo import WeiboAuthError, WeiboBlocked
+    from fetch_weibo import StageBudgetExhausted, WeiboAuthError, WeiboBlocked
 
     rc = 0
     try:
-        fetch_run(args.mode, args.resume, args.limit)
+        fetch_run(args.mode, args.resume, args.limit, args.max_requests)
+    except StageBudgetExhausted as exc:
+        print(f"[阶段预算] {exc}", file=sys.stderr)
+        rc = 4
     except WeiboAuthError as exc:
         print(f"[Cookie] {exc}", file=sys.stderr)
         rc = 2
@@ -398,6 +401,12 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--mode", choices=["probe", "snapshot", "incremental"], default="snapshot")
     f.add_argument("--resume", action="store_true")
     f.add_argument("--limit", type=int, default=None)
+    f.add_argument(
+        "--max-requests",
+        type=int,
+        default=None,
+        help="本次最多消耗的请求数，不影响共享单日上限",
+    )
 
     sub.add_parser("stats", help="库统计")
 
