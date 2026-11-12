@@ -81,6 +81,26 @@ class CommentPilotTest(unittest.TestCase):
         self.assertEqual(root["author_liked"], 1)
         self.assertEqual(root["author_liked_known"], 1)
 
+    def test_all_roots_from_page_are_saved(self) -> None:
+        items = [
+            {
+                "idstr": str(i),
+                "text_raw": f"评论 {i}",
+                "like_counts": i if i == 20 else 0,
+                "total_number": 0,
+            }
+            for i in range(1, 21)
+        ]
+        thread = comment_pilot.save_page("100", items, "next", "pilot")
+        rows = store.comments_for_post("100")
+
+        self.assertEqual(thread["roots_selected"], 20)
+        self.assertEqual(len(rows), 20)
+        self.assertEqual(
+            {row["id"] for row in rows},
+            {str(i) for i in range(1, 21)},
+        )
+
     def test_embedded_reply_counts_ignore_duplicates_and_invalid_ids(self) -> None:
         items = [
             {
@@ -230,6 +250,40 @@ curated_post_ids = ["{index}", "{index + 4}", "{index + 8}", "{index + 12}", "{i
         self.assertTrue((output / "comment-pilot.json").exists())
         self.assertTrue((output / "comment-pilot.md").exists())
         self.assertEqual(exported["posts"], 20)
+
+    def test_selection_skips_completed_and_prefers_newer_posts(self) -> None:
+        conn = store.connect()
+        try:
+            for number in range(1, 5):
+                conn.execute(
+                    "INSERT INTO posts (id, text_plain, fetched_at, ts, comments_count) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        str(number),
+                        f"post {number} 比格犬受害者联盟",
+                        f"2026-11-{number:02d}T00:00:00+00:00",
+                        number,
+                        number,
+                    ),
+                )
+            conn.execute(
+                "INSERT INTO post_categories (post_id, category) "
+                "VALUES ('1', 'interactions'), ('2', 'interactions'), "
+                "('3', 'interactions'), ('4', 'interactions')"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        comment_pilot.save_page(
+            "4",
+            [{"idstr": "done", "text_raw": "done", "total_number": 0}],
+            "next",
+            "pilot",
+        )
+
+        posts = comment_pilot.select_posts(limit=3)
+
+        self.assertEqual([post["id"] for post in posts], ["3", "2", "1"])
 
     def test_export_contains_selection_audit_fields(self) -> None:
         comments = [
