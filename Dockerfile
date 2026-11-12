@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 仅拷贝运行时需要的代码与数据快照；.env（含 Cookie）由 .dockerignore 排除。
 # fetch_weibo 提供视频直链按需刷新所需的限速与接口请求逻辑。
-COPY --chown=appuser:appuser config.py filters.py store.py fetch_weibo.py ./
+COPY --chown=appuser:appuser config.py filters.py memes.py store.py fetch_weibo.py ./
 COPY --chown=appuser:appuser app ./app
 COPY --chown=appuser:appuser data ./data
 
