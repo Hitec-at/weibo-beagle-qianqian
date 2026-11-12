@@ -159,6 +159,29 @@ CREATE TABLE IF NOT EXISTS post_categories (
     PRIMARY KEY (post_id, category)
 );
 CREATE INDEX IF NOT EXISTS idx_post_categories_category ON post_categories(category);
+CREATE TABLE IF NOT EXISTS candidate_reviews (
+    candidate_key TEXT PRIMARY KEY,
+    source_type TEXT NOT NULL,
+    post_id TEXT NOT NULL,
+    meme_slug TEXT NOT NULL,
+    comment_id TEXT NOT NULL DEFAULT '',
+    decision TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    reason TEXT NOT NULL,
+    evidence_json TEXT NOT NULL DEFAULT '[]',
+    proposed_changes_json TEXT NOT NULL DEFAULT '{}',
+    reviewer TEXT NOT NULL,
+    batch_id TEXT NOT NULL,
+    rules_version TEXT NOT NULL,
+    reviewed_at TEXT NOT NULL,
+    human_required INTEGER NOT NULL DEFAULT 1,
+    applied INTEGER NOT NULL DEFAULT 0,
+    human_decision TEXT NOT NULL DEFAULT '',
+    human_note TEXT NOT NULL DEFAULT '',
+    human_reviewed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_candidate_reviews_human
+    ON candidate_reviews(human_required, human_decision);
 """
 
 LEDGER_SCHEMA = """
@@ -1013,6 +1036,72 @@ def baseline_review_rows(version: str) -> list[dict]:
                 c.post_id
             """,
             (version,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def candidate_review_keys() -> set[str]:
+    conn = connect()
+    try:
+        rows = conn.execute("SELECT candidate_key FROM candidate_reviews").fetchall()
+        return {str(row["candidate_key"]) for row in rows}
+    finally:
+        conn.close()
+
+
+def insert_candidate_review(review: dict) -> bool:
+    conn = connect()
+    try:
+        cursor = conn.execute(
+            """
+            INSERT OR IGNORE INTO candidate_reviews (
+                candidate_key, source_type, post_id, meme_slug, comment_id,
+                decision, confidence, reason, evidence_json,
+                proposed_changes_json, reviewer, batch_id, rules_version,
+                reviewed_at, human_required, applied
+            ) VALUES (
+                :candidate_key, :source_type, :post_id, :meme_slug, :comment_id,
+                :decision, :confidence, :reason, :evidence_json,
+                :proposed_changes_json, :reviewer, :batch_id, :rules_version,
+                :reviewed_at, :human_required, :applied
+            )
+            """,
+            review,
+        )
+        conn.commit()
+        return cursor.rowcount == 1
+    finally:
+        conn.close()
+
+
+def candidate_reviews_needing_human() -> list[dict]:
+    conn = connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM candidate_reviews
+            WHERE human_required = 1 AND human_decision = ''
+            ORDER BY meme_slug, confidence ASC, reviewed_at, candidate_key
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def candidate_review_stats() -> list[dict]:
+    conn = connect()
+    try:
+        rows = conn.execute(
+            """
+            SELECT decision, human_required, applied, COUNT(*) AS review_count
+            FROM candidate_reviews
+            GROUP BY decision, human_required, applied
+            ORDER BY decision, human_required, applied
+            """
         ).fetchall()
         return [dict(row) for row in rows]
     finally:

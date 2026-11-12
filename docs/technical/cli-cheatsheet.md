@@ -107,6 +107,25 @@ $PYBIN wbq.py comments-pilot --fetch --output dist/comment-pilot
 位次和入选原因，并保存接口返回的全部根评论；默认前 10 与点赞前 5 作为审核标记。
 二级回复只保存接口内嵌部分，并分别标记根评论回复是否保存完整、整条微博首页是否翻完。
 
+## 子 agent 候选审核
+
+审核准则在 `docs/review/candidate-review-v1.md`，few-shot 在
+`docs/review/candidate-few-shots-v1.json`。
+
+```bash
+.venv/bin/python candidate_review.py export \
+  --output dist/candidate-review/STAMP --limit 150 --batch-size 50
+
+# 每个子 agent 只读取并处理一个 batch-XX.json，写独立的决定文件。
+.venv/bin/python candidate_review.py record --input <决定文件>
+
+.venv/bin/python candidate_review.py human --output dist/candidate-review/STAMP
+.venv/bin/python candidate_review.py stats
+```
+
+每天最多导出 150 条，分为 3 个 50 条批次。高置信决定会持久化；`uncertain`、
+低置信或证据不完整的决定进入人审清单。重复导入相同候选会跳过，不会重复审核。
+
 ## 跑站点
 
 ```bash
