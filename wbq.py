@@ -398,7 +398,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     f = sub.add_parser("fetch", help="抓取微博入库")
-    f.add_argument("--mode", choices=["probe", "snapshot", "incremental"], default="snapshot")
+    f.add_argument(
+        "--mode",
+        choices=["probe", "snapshot", "incremental", "auto"],
+        default="snapshot",
+    )
     f.add_argument("--resume", action="store_true")
     f.add_argument("--limit", type=int, default=None)
     f.add_argument(

@@ -326,6 +326,17 @@ def count_posts(where: str = "1=1", params: tuple = ()) -> int:
         conn.close()
 
 
+def latest_post_id() -> str | None:
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT id FROM posts ORDER BY CAST(id AS INTEGER) DESC LIMIT 1"
+        ).fetchone()
+        return str(row["id"]) if row else None
+    finally:
+        conn.close()
+
+
 def query_posts(
     where: str,
     params: tuple = (),
