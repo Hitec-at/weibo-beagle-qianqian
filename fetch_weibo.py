@@ -528,6 +528,28 @@ def post_id(mblog: dict) -> str:
     return str(mblog.get("idstr") or mblog.get("id") or mblog.get("mid") or "")
 
 
+def _newer_id(left: str | None, right: str | None) -> str | None:
+    """返回两个微博 ID 中较新的一个；非数字 ID 保留先出现值。"""
+    if not left:
+        return right
+    if not right:
+        return left
+    try:
+        return left if int(left) >= int(right) else right
+    except (TypeError, ValueError):
+        return left
+
+
+def _resolve_mode(mode: str) -> str:
+    if mode != "auto":
+        return mode
+    return (
+        "incremental"
+        if store.get_meta("snapshot_complete") == "1"
+        else "snapshot"
+    )
+
+
 def run(
     mode: str,
     resume: bool,
@@ -537,7 +559,6 @@ def run(
     store.init_db()
     session = make_session()
     limiter = RateLimiter(max_requests=max_requests)
-    print(f"目标：抓取截至 {config.SNAPSHOT_CUTOFF} 的存量微博（含更早历史）。", flush=True)
 
     if mode == "probe":
         posts, since_id = fetch_mymblog(session, limiter, 1)
@@ -556,27 +577,39 @@ def run(
                 print("pic_infos 示例键：", sorted(pi[k0].keys()) if k0 else "无", flush=True)
         return
 
+    effective_mode = _resolve_mode(mode)
+    if mode == "auto":
+        print(f"自动模式：本轮执行 {effective_mode} 抓取。", flush=True)
+    if effective_mode == "incremental":
+        print("目标：补齐上次检查点之后的首页新微博。", flush=True)
+    else:
+        print(f"目标：抓取截至 {config.SNAPSHOT_CUTOFF} 的存量微博（含更早历史）。", flush=True)
+
     start_page = 1
-    if resume:
+    if resume or mode == "auto":
         saved = store.get_meta("last_page")
-        if saved and saved.isdigit():
+        if saved and saved.isdigit() and int(saved) > 0:
             start_page = int(saved)
 
     last_id: str | None = None
-    if mode == "incremental":
-        last_id = store.get_meta("last_id")
+    if effective_mode == "incremental":
+        last_id = _newer_id(store.get_meta("last_id"), store.latest_post_id())
 
-    newest_overall: str | None = None
     page = start_page
     while True:
         if limit is not None and page - start_page + 1 > limit:
             break
         posts, _ = fetch_mymblog(session, limiter, page)
         if not posts:
-            print(
-                f"本页无内容，抓取结束。已覆盖截至 {config.SNAPSHOT_CUTOFF} 的存量微博。",
-                flush=True,
-            )
+            if effective_mode == "snapshot":
+                store.set_meta("snapshot_complete", "1")
+                store.set_meta("last_page", "0")
+                print(
+                    f"本页无内容，历史存量已完成。后续自动运行将改为增量抓取。",
+                    flush=True,
+                )
+            else:
+                print("本页无内容，增量抓取结束。", flush=True)
             break
 
         stopped = False
@@ -621,14 +654,18 @@ def run(
             store.upsert_post(p)
             own_count += 1
 
+        if page == 1 and page_newest:
+            stored_last_id = store.get_meta("last_id")
+            updated_last_id = _newer_id(stored_last_id, page_newest)
+            if updated_last_id != stored_last_id:
+                store.set_meta("last_id", updated_last_id or "")
+                last_id = updated_last_id
+
         if stopped:
             break
 
-        if newest_overall is None and page_newest:
-            newest_overall = page_newest
-        store.set_meta("last_page", str(page))
-        if newest_overall:
-            store.set_meta("last_id", newest_overall)
+        if effective_mode == "snapshot":
+            store.set_meta("last_page", str(page))
         print(f"第 {page} 页完成（本页她的帖子 {own_count} 条）。", flush=True)
         page += 1
         pages_done = page - start_page
@@ -642,7 +679,11 @@ def run(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="抓取 @比格钱钱 公开微博")
-    parser.add_argument("--mode", choices=["probe", "snapshot", "incremental"], default="snapshot")
+    parser.add_argument(
+        "--mode",
+        choices=["probe", "snapshot", "incremental", "auto"],
+        default="snapshot",
+    )
     parser.add_argument("--resume", action="store_true", help="从检查点继续")
     parser.add_argument("--limit", type=int, default=None, help="本次最多抓取的页数")
     parser.add_argument(

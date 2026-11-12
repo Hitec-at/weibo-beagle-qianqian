@@ -14,6 +14,7 @@ $PYBIN wbq.py fetch --mode probe                # 校验 Cookie 是否有效，�
 $PYBIN wbq.py fetch --mode snapshot             # 全量快照，从第 1 页开始
 $PYBIN wbq.py fetch --mode snapshot --resume    # 从检查点续抓（日限 500 次触发后，下轮用它继续）
 $PYBIN wbq.py fetch --mode incremental          # 增量：自上次检查点起补新
+$PYBIN wbq.py fetch --mode auto                 # 历史未完成时续抓，完成后自动转为增量
 $PYBIN wbq.py fetch --mode snapshot --limit 5   # 只抓 5 页，测试用
 $PYBIN wbq.py fetch --mode snapshot --resume --max-requests 400
                                                  # 本阶段最多 400 次请求，为后续分析预留日额度
@@ -22,6 +23,10 @@ $PYBIN wbq.py fetch --mode snapshot --resume --max-requests 400
 退出码：`0` 正常，`2` Cookie 失效，`3` 被风控/日限，`4` 达到本次阶段预算，
 `130` 手动中断（检查点已保存）。
 每次 fetch 结束（含日限中断）后会自动运行一次分类整理。
+
+`auto` 模式由 `meta.snapshot_complete` 控制。历史抓取遇到空页后写入完成状态并把
+`last_page` 归零；后续 `auto` 运行从首页执行增量，不会覆盖历史检查点。增量锚点
+同时取 `meta.last_id` 与数据库最大帖子 ID 中较新的值，可修复旧检查点偏旧的问题。
 
 ## 查看与筛选（纯读库，不联网）
 
