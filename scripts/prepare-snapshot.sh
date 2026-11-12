@@ -5,7 +5,6 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
 DB_PATH="${DB_PATH:-data/weibo.db}"
-RELEASE_TAG="${RELEASE_TAG:-data-latest}"
 SNAPSHOT_DIR="${SNAPSHOT_DIR:-dist}"
 UPLOAD=1
 
@@ -48,6 +47,11 @@ echo "posts=$POSTS categories=$CATEGORIES"
 
 mkdir -p "$SNAPSHOT_DIR"
 STAMP="$(date -u '+%Y%m%dT%H%M%SZ')"
+RELEASE_TAG="${RELEASE_TAG:-data-$STAMP}"
+if [[ ! "$RELEASE_TAG" =~ ^data-[0-9]{8}T[0-9]{6}Z$ ]]; then
+  echo "RELEASE_TAG 必须是不可变的 data-YYYYMMDDTHHMMSSZ：$RELEASE_TAG" >&2
+  exit 1
+fi
 ASSET="weibo-${STAMP}.db.gz"
 ASSET_PATH="$SNAPSHOT_DIR/$ASSET"
 
@@ -64,8 +68,9 @@ printf '%s  %s\n' "$SHA256" "$ASSET" >"$ASSET_PATH.sha256"
 echo "snapshot=$ASSET"
 echo "sha256=$SHA256"
 echo "size=$(du -h "$ASSET_PATH" | awk '{print $1}')"
-printf 'SNAPSHOT_ASSET=%s\nSNAPSHOT_SHA256=%s\n' \
-  "$ASSET" "$SHA256" >"$SNAPSHOT_DIR/latest.env"
+echo "release=$RELEASE_TAG"
+printf 'RELEASE_TAG=%s\nSNAPSHOT_ASSET=%s\nSNAPSHOT_SHA256=%s\n' \
+  "$RELEASE_TAG" "$ASSET" "$SHA256" >"$SNAPSHOT_DIR/latest.env"
 
 if [[ "$UPLOAD" -eq 0 ]]; then
   echo "已跳过上传。"
@@ -81,16 +86,11 @@ gh auth status >/dev/null 2>&1 || {
   exit 1
 }
 
-if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-  echo "==> 创建滚动数据 Release：$RELEASE_TAG"
-  gh release create "$RELEASE_TAG" \
-    --title "微博数据快照" \
-    --notes "由 scripts/prepare-snapshot.sh 维护的滚动数据快照。" \
-    --prerelease
-fi
-
-echo "==> 上传快照到 GitHub Release"
-gh release upload "$RELEASE_TAG" "$ASSET_PATH" "$ASSET_PATH.sha256" --clobber
+echo "==> 创建不可变数据 Release：$RELEASE_TAG"
+gh release create "$RELEASE_TAG" "$ASSET_PATH" "$ASSET_PATH.sha256" \
+  --title "微博数据快照 $STAMP" \
+  --notes "数据文件：$ASSET；发布时间：$STAMP。" \
+  --prerelease
 
 echo
 echo "下一步触发部署："
