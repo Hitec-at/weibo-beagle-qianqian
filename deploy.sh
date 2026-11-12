@@ -11,6 +11,15 @@ fi
 # shellcheck disable=SC1091
 source dist/latest.env
 
+if [[ -z "${RELEASE_TAG:-}" ]]; then
+  echo "dist/latest.env 缺少 RELEASE_TAG，请重新执行：./scripts/prepare-snapshot.sh" >&2
+  exit 1
+fi
+if [[ ! "$RELEASE_TAG" =~ ^data-[0-9]{8}T[0-9]{6}Z$ ]]; then
+  echo "RELEASE_TAG 必须是不可变的 data-YYYYMMDDTHHMMSSZ：$RELEASE_TAG" >&2
+  exit 1
+fi
+
 if ! command -v gh >/dev/null 2>&1; then
   echo "未检测到 GitHub CLI。" >&2
   exit 1
@@ -23,6 +32,7 @@ gh auth status >/dev/null 2>&1 || {
 echo "==> 触发 GitHub Actions 部署"
 echo "snapshot=$SNAPSHOT_ASSET"
 echo "sha256=$SNAPSHOT_SHA256"
+echo "release=$RELEASE_TAG"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-$(git branch --show-current)}"
 if [[ -z "$DEPLOY_BRANCH" ]]; then
   echo "无法确定当前分支，请设置 DEPLOY_BRANCH。" >&2
@@ -32,7 +42,8 @@ echo "branch=$DEPLOY_BRANCH"
 gh workflow run deploy.yml \
   --ref "$DEPLOY_BRANCH" \
   -f snapshot_asset="$SNAPSHOT_ASSET" \
-  -f sha256="$SNAPSHOT_SHA256"
+  -f sha256="$SNAPSHOT_SHA256" \
+  -f release_tag="$RELEASE_TAG"
 
 echo
 echo "部署已提交。查看运行状态："

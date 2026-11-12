@@ -23,7 +23,8 @@
    ./scripts/prepare-snapshot.sh
    ```
 
-   脚本会检查 SQLite 完整性、生成压缩包和 SHA256，并上传到 `data-latest` Release。
+   脚本会检查 SQLite 完整性、生成压缩包和 SHA256，并上传到不可变的
+   `data-YYYYMMDDTHHMMSSZ` Release。生成信息写入 `dist/latest.env`。
 6. 触发部署：
 
    ```bash
@@ -77,6 +78,8 @@ Actions 会自动请求以下地址：
    ```bash
    ./scripts/prepare-snapshot.sh
    ```
+
+   默认创建新的不可变 `data-*` Release，不覆盖历史快照。
 3. 需要发布时再手动触发：
 
    ```bash
