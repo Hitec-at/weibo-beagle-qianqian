@@ -12,6 +12,8 @@
 - [Cookie 写入 SOP](cookie-sop.md)
 - [评论接口探测记录](comment-probe.md)
 - [评论质量试跑结果](comment-pilot-2026-11-11.md)
+- [候选审核准则 v1](../review/candidate-review-v1.md)
+- [候选审核 few-shot v1](../review/candidate-few-shots-v1.json)
 - [N宗罪 baseline v1 审核](baseline-reviews/2026-11-11-v1.md)
 - [N宗罪 baseline v2 审核](baseline-reviews/2026-11-11-v2.md)
 - [N宗罪 baseline v3 首批人工审核](baseline-reviews/2026-11-12-v3.md)
