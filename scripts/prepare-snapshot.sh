@@ -87,9 +87,11 @@ gh auth status >/dev/null 2>&1 || {
 }
 
 echo "==> 创建不可变数据 Release：$RELEASE_TAG"
+# Bash 3.2 in UTF-8 locales can absorb a following multibyte byte into the
+# variable name, so keep explicit braces around values embedded in Chinese text.
 gh release create "$RELEASE_TAG" "$ASSET_PATH" "$ASSET_PATH.sha256" \
-  --title "微博数据快照 $STAMP" \
-  --notes "数据文件：$ASSET；发布时间：$STAMP。" \
+  --title "微博数据快照 ${STAMP}" \
+  --notes "数据文件：${ASSET}；发布时间：${STAMP}。" \
   --prerelease
 
 echo
