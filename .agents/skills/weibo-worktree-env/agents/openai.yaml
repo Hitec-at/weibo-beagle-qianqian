@@ -1,0 +1,4 @@
+interface:
+  display_name: "微博 Worktree 环境"
+  short_description: "为微博开发 worktree 安全初始化并校验本地环境配置"
+  default_prompt: "使用 $weibo-worktree-env 为当前 worktree 准备微博环境。"
