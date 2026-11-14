@@ -119,12 +119,23 @@ $PYBIN wbq.py comments-pilot --fetch --output dist/comment-pilot
 # 每个子 agent 只读取并处理一个 batch-XX.json，写独立的决定文件。
 .venv/bin/python candidate_review.py record --input <决定文件>
 
+# 人工最终决定优先使用独立命令；先预演，再正式写入。
+.venv/bin/python candidate_review.py resolve-human \
+  --input <人工决定文件> --dry-run
+.venv/bin/python candidate_review.py resolve-human --input <人工决定文件>
+
 .venv/bin/python candidate_review.py human --output dist/candidate-review/STAMP
 .venv/bin/python candidate_review.py stats
 ```
 
 每天最多导出 150 条，分为 3 个 50 条批次。高置信决定会持久化；`uncertain`、
 低置信或证据不完整的决定进入人审清单。重复导入相同候选会跳过，不会重复审核。
+
+人工决定文件必须包含 `reviewer` 和 `decisions`。每项决定必须有
+`candidate_key`、`reason`、`evidence`，并选择 `accept`、`reject` 或 `defer`。
+`accept` 和 `reject` 必须有非空证据；`defer` 会继续留在人工待办中。命令会先校验
+整批 candidate_key 和当前状态，再用一个事务写入；任一决定失败时整批不生效。
+同一决定可重复提交，已得到不同最终决定的候选不会被静默覆盖。
 
 ## 跑站点
 

@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import math
+import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,7 @@ ROOT = Path(__file__).resolve().parent
 RULES_VERSION = "candidate-review-v1"
 AUTO_APPLY_CONFIDENCE = 0.85
 DECISIONS = {"accept", "reject", "uncertain"}
+HUMAN_DECISIONS = {"accept", "reject", "defer"}
 RULES_PATH = ROOT / "docs" / "review" / "candidate-review-v1.md"
 FEW_SHOTS_PATH = ROOT / "docs" / "review" / "candidate-few-shots-v1.json"
 
@@ -335,6 +337,232 @@ def record_decisions(path: str | Path) -> dict:
     }
 
 
+def _normalize_human_decision(raw: dict, reviewer: str, batch_id: str) -> dict:
+    candidate = str(raw.get("candidate_key") or "").strip()
+    if not candidate:
+        raise ValueError("candidate_key 不能为空")
+    value = str(raw.get("decision") or "").strip().lower()
+    if value not in HUMAN_DECISIONS:
+        raise ValueError(f"无效人工决定：{value or '空'}")
+    reason = str(raw.get("reason") or "").strip()
+    if not reason:
+        raise ValueError(f"{candidate} 的 reason 不能为空")
+    evidence = raw.get("evidence")
+    if not isinstance(evidence, (dict, list)):
+        raise ValueError(f"{candidate} 的 evidence 必须是对象或数组")
+    if value in {"accept", "reject"} and not evidence:
+        raise ValueError(f"{candidate} 的 accept/reject 决定必须包含 evidence")
+    proposed = raw.get("proposed_changes") or {}
+    if not isinstance(proposed, dict):
+        raise ValueError(f"{candidate} 的 proposed_changes 必须是对象")
+    confidence = float(raw.get("confidence", 1.0))
+    if not math.isfinite(confidence) or not 0 <= confidence <= 1:
+        raise ValueError(f"{candidate} 的 confidence 必须在 0–1 之间")
+    return {
+        "candidate_key": candidate,
+        "decision": value,
+        "confidence": confidence,
+        "reason": reason,
+        "evidence": evidence,
+        "proposed_changes": proposed,
+        "reviewer": reviewer,
+        "batch_id": batch_id,
+    }
+
+
+def resolve_human_decisions(path: str | Path, dry_run: bool = False) -> dict:
+    """校验并应用人工最终决定；同一批次要么全部成功，要么全部回滚。"""
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    reviewer = str(payload.get("reviewer") or "").strip()
+    if not reviewer:
+        raise ValueError("决定文件必须包含 reviewer")
+    batch_id = str(payload.get("batch_id") or "human-resolution").strip()
+    rows = payload.get("decisions")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("decisions 必须是非空数组")
+
+    decisions = [
+        _normalize_human_decision(row, reviewer, batch_id)
+        for row in rows
+    ]
+    keys = [item["candidate_key"] for item in decisions]
+    if len(keys) != len(set(keys)):
+        raise ValueError("decisions 中存在重复 candidate_key")
+
+    conn = store.connect()
+    try:
+        placeholders = ",".join("?" for _ in keys)
+        current_rows = conn.execute(
+            f"""
+            SELECT candidate_key, post_id, meme_slug, human_required,
+                   human_decision
+            FROM candidate_reviews
+            WHERE candidate_key IN ({placeholders})
+            """,
+            keys,
+        ).fetchall()
+        current = {str(row["candidate_key"]): dict(row) for row in current_rows}
+
+        missing = [key for key in keys if key not in current]
+        if missing:
+            raise ValueError(f"候选不存在：{', '.join(missing)}")
+
+        pending: list[tuple[dict, dict, str]] = []
+        unchanged: list[tuple[dict, dict, str]] = []
+        for decision in decisions:
+            row = current[decision["candidate_key"]]
+            current_decision = str(row["human_decision"] or "")
+            if current_decision == decision["decision"]:
+                unchanged.append((decision, row, "unchanged"))
+                continue
+            if current_decision not in {"", "defer"}:
+                raise ValueError(
+                    f"{decision['candidate_key']} 已有人工最终决定"
+                    f"「{current_decision}」，不能改为「{decision['decision']}」"
+                )
+            if int(row["human_required"] or 0) != 1:
+                raise ValueError(
+                    f"{decision['candidate_key']} 不是待人工审核状态"
+                )
+            pending.append((decision, row, "pending"))
+
+        results = [
+            {
+                "candidate_key": decision["candidate_key"],
+                "post_id": row["post_id"],
+                "meme_slug": row["meme_slug"],
+                "decision": decision["decision"],
+                "status": status,
+            }
+            for decision, row, status in unchanged
+        ]
+        results.extend(
+            {
+                "candidate_key": decision["candidate_key"],
+                "post_id": row["post_id"],
+                "meme_slug": row["meme_slug"],
+                "decision": decision["decision"],
+                "status": "would_apply" if dry_run else "applied",
+            }
+            for decision, row, _ in pending
+        )
+
+        counts = {
+            "accepted": sum(
+                1 for item, _, _ in pending if item["decision"] == "accept"
+            ),
+            "rejected": sum(
+                1 for item, _, _ in pending if item["decision"] == "reject"
+            ),
+            "deferred": sum(
+                1 for item, _, _ in pending if item["decision"] == "defer"
+            ),
+            "unchanged": len(unchanged),
+        }
+        if dry_run:
+            conn.rollback()
+            return {
+                "dry_run": True,
+                "reviewer": reviewer,
+                "batch_id": batch_id,
+                **counts,
+                "results": results,
+            }
+
+        reviewed_at = datetime.now(timezone.utc).isoformat()
+        for decision, row, _ in pending:
+            if decision["decision"] == "defer":
+                cursor = conn.execute(
+                    """
+                    UPDATE candidate_reviews
+                    SET human_decision = 'defer',
+                        human_note = ?,
+                        human_reviewed_at = ?,
+                        human_required = 1,
+                        applied = 0
+                    WHERE candidate_key = ?
+                      AND human_required = 1
+                      AND human_decision IN ('', 'defer')
+                    """,
+                    (
+                        decision["reason"],
+                        reviewed_at,
+                        decision["candidate_key"],
+                    ),
+                )
+            else:
+                applied = int(decision["decision"] == "accept")
+                cursor = conn.execute(
+                    """
+                    UPDATE candidate_reviews
+                    SET decision = ?,
+                        confidence = ?,
+                        reason = ?,
+                        evidence_json = ?,
+                        proposed_changes_json = ?,
+                        reviewer = ?,
+                        batch_id = ?,
+                        human_decision = ?,
+                        human_note = ?,
+                        human_reviewed_at = ?,
+                        human_required = 0,
+                        applied = ?
+                    WHERE candidate_key = ?
+                      AND human_required = 1
+                      AND human_decision IN ('', 'defer')
+                    """,
+                    (
+                        decision["decision"],
+                        decision["confidence"],
+                        decision["reason"],
+                        json.dumps(decision["evidence"], ensure_ascii=False),
+                        json.dumps(decision["proposed_changes"], ensure_ascii=False),
+                        decision["reviewer"],
+                        decision["batch_id"],
+                        decision["decision"],
+                        decision["reason"],
+                        reviewed_at,
+                        applied,
+                        decision["candidate_key"],
+                    ),
+                )
+            if cursor.rowcount != 1:
+                raise ValueError(f"{decision['candidate_key']} 更新失败")
+            if decision["decision"] == "accept":
+                matched_term = (
+                    reviewer
+                    if reviewer.startswith("human:")
+                    else f"human:{reviewer}"
+                )
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO post_memes
+                        (post_id, meme_slug, matched_by, matched_term,
+                         confidence, updated_at)
+                    VALUES (?, ?, 'human', ?, ?, datetime('now'))
+                    """,
+                    (
+                        row["post_id"],
+                        row["meme_slug"],
+                        matched_term,
+                        decision["confidence"],
+                    ),
+                )
+        conn.commit()
+        return {
+            "dry_run": False,
+            "reviewer": reviewer,
+            "batch_id": batch_id,
+            **counts,
+            "results": results,
+        }
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def export_human_review(output_dir: str | Path) -> dict:
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
@@ -360,12 +588,15 @@ def export_human_review(output_dir: str | Path) -> dict:
         meme = _meme_context(slug)
         lines.extend([f"## {meme['name']}（{slug}）", ""])
         for item in items:
+            deferred = item.get("human_decision") == "defer"
             lines.extend(
                 [
                     f"- `{item['candidate_key']}` · {item['post_id']} · "
-                    f"{item['decision']} · 置信度 {item['confidence']:.2f}",
+                    f"{'人工延后' if deferred else item['decision']} · "
+                    f"置信度 {item['confidence']:.2f}",
                     f"  - 原微博：{item['post_text'][:200]}",
-                    f"  - 理由：{item['reason']}",
+                    f"  - 理由："
+                    f"{item['human_note'] if deferred else item['reason']}",
                     f"  - 证据：`{item['evidence_json']}`",
                 ]
             )
@@ -388,6 +619,9 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--batch-size", type=int, default=50)
     record = sub.add_parser("record", help="导入子 agent 决定")
     record.add_argument("--input", required=True)
+    resolve = sub.add_parser("resolve-human", help="导入人工最终决定")
+    resolve.add_argument("--input", required=True)
+    resolve.add_argument("--dry-run", action="store_true")
     human = sub.add_parser("human", help="导出人工待办")
     human.add_argument("--output", required=True)
     sub.add_parser("stats", help="查看审核统计")
@@ -407,6 +641,14 @@ def main(argv=None) -> int:
         return 0
     if args.command == "record":
         print(json.dumps(record_decisions(args.input), ensure_ascii=False, indent=2))
+        return 0
+    if args.command == "resolve-human":
+        try:
+            result = resolve_human_decisions(args.input, dry_run=args.dry_run)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            print(f"[人工决定] {exc}", file=sys.stderr)
+            return 1
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
     if args.command == "human":
         print(
