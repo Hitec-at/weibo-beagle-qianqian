@@ -1083,7 +1083,8 @@ def candidate_reviews_needing_human() -> list[dict]:
             """
             SELECT *
             FROM candidate_reviews
-            WHERE human_required = 1 AND human_decision = ''
+            WHERE human_required = 1
+              AND human_decision IN ('', 'defer')
             ORDER BY meme_slug, confidence ASC, reviewed_at, candidate_key
             """
         ).fetchall()
