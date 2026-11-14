@@ -83,6 +83,30 @@ class ClassificationTest(unittest.TestCase):
             conn.close()
         self.assertEqual(row["matched_by"], "curated")
 
+    def test_confirmed_high_precision_phrases_are_indexed_as_memes(self) -> None:
+        cases = (
+            "今天钱钱又偷有屎的纸尿裤了",
+            "早上好，小胖狗",
+            "保安说是不是那只胖狗",
+            "减肥失败",
+            "全是钱钱的快递",
+            "您的快递📦正在打包",
+        )
+        for index, text in enumerate(cases, start=10):
+            with self.subTest(text=text):
+                categories = classify.classify_post(self._post(str(index), text))
+                self.assertIn("memes", categories)
+
+    def test_generic_diaper_and_bin_words_remain_reviewable(self) -> None:
+        self.assertNotIn(
+            "memes",
+            classify.classify_post(self._post("20", "纸尿裤放在桌上")),
+        )
+        self.assertIn(
+            "memes",
+            classify.classify_post(self._post("21", "垃圾桶放在地上")),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

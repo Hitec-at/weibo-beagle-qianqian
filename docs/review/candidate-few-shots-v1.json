@@ -34,26 +34,53 @@
       "post_text": "如何辨别自己有恋丑癖，当别人都在说钱钱丑的时候……他有五十斤……胖爪爪特别好看",
       "decision": "reject",
       "confidence": 0.95,
-      "reason": "内容是粉丝审美和称呼讨论，没有胖瘦循环的行为链。",
-      "evidence": ["正文主题是“恋丑癖”辨别，不是体重变化"]
+      "reason": "正文没有直接称呼钱钱胖或瘦，讨论重点也不是其身材体重评价。",
+      "evidence": ["正文主题是“恋丑癖”辨别，仅间接提到五十斤和胖爪爪"]
     },
     {
       "post_id": "5219209567277286",
       "meme_slug": "pangshou-erxiangxing",
       "post_text": "昨天偷吃太多了，今天就给他吃了半个罐头！饿他两天！",
-      "decision": "uncertain",
-      "confidence": 0.7,
-      "reason": "单条正文有放纵与节食的反差，但是否构成持续二象性需要相邻微博证据。",
-      "evidence": ["post.text 同时出现“偷吃太多”和“饿他两天”"]
+      "decision": "reject",
+      "confidence": 0.95,
+      "reason": "该微博已归入偷吃；只围绕偷吃后的节食不自动新增胖瘦二象性。",
+      "evidence": ["post.text 同时出现“偷吃太多”和“饿他两天”", "人工决定保留偷吃关联，不新增胖瘦二象性"]
     },
     {
       "post_id": "5223004414149306",
       "meme_slug": "pangshou-erxiangxing",
       "post_text": "早上好🌞小胖狗～",
-      "decision": "uncertain",
-      "confidence": 0.6,
-      "reason": "只有单次“小胖狗”称呼，无法判断是否存在胖瘦变化。",
-      "evidence": ["post.text 只有“小胖狗”，没有体重或变化描述"]
+      "decision": "accept",
+      "confidence": 0.92,
+      "reason": "主人直接以“小胖狗”称呼钱钱，符合扩展后的胖瘦二象性边界。",
+      "evidence": ["post.text 含“小胖狗”"]
+    },
+    {
+      "post_id": "5234028678220391",
+      "meme_slug": "chishi",
+      "post_text": "一到家，奶奶和弟弟就和我说今天钱钱哥又偷妹妹有屎的纸尿裤了，爷爷追出门去抢回来了",
+      "decision": "accept",
+      "confidence": 0.93,
+      "reason": "正文明确写钱钱偷有屎的纸尿裤；按人工确认口径视为吃小孩屎。",
+      "evidence": ["post.text 含“钱钱哥又偷妹妹有屎的纸尿裤”"]
+    },
+    {
+      "post_id": "5313804204247818",
+      "meme_slug": "chishi",
+      "post_text": "垃圾桶放在地上没一分钟！",
+      "decision": "reject",
+      "confidence": 0.96,
+      "reason": "正文只证明接触垃圾桶，没有证明食用粪便。",
+      "evidence": ["post.text 只有垃圾桶语境", "该微博已有翻垃圾人工关联"]
+    },
+    {
+      "post_id": "5235115999366135",
+      "meme_slug": "shouli",
+      "post_text": "全是钱钱的快递📦",
+      "decision": "accept",
+      "confidence": 0.9,
+      "reason": "晒钱钱收到的快递；按项目语境通常由网友寄送。",
+      "evidence": ["post.text 含“钱钱的快递”"]
     }
   ]
 }

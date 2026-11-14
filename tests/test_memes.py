@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import baseline
 import memes
 import store
 
@@ -62,6 +63,23 @@ class MemeSeedTest(unittest.TestCase):
         self.assertIn("发小的狗", seed["pangshou-erxiangxing"]["exclude"])
         self.assertIn("11岁的边牧", seed["pangshou-erxiangxing"]["exclude"])
         self.assertNotIn("一箱", seed["shouli"]["exclude"])
+
+    def test_confirmed_boundaries_are_registered_in_query_packs(self) -> None:
+        seed = {item["slug"]: item for item in memes.load_seed()}
+
+        self.assertIn(
+            "有屎的纸尿裤", seed["chishi"]["auto_publish_terms"]
+        )
+        self.assertIn("垃圾桶", seed["chishi"]["candidate_terms"])
+        self.assertIn("小胖狗", seed["pangshou-erxiangxing"]["auto_publish_terms"])
+        self.assertIn("胖狗", seed["pangshou-erxiangxing"]["auto_publish_terms"])
+        self.assertIn("减肥失败", seed["pangshou-erxiangxing"]["auto_publish_terms"])
+        self.assertIn("钱钱的快递", seed["shouli"]["auto_publish_terms"])
+        self.assertIn("只吃垃圾桶内容属于翻垃圾", seed["chishi"]["boundary"])
+        self.assertIn(
+            "不再要求同时出现体重变化和饮食控制两个环节",
+            seed["pangshou-erxiangxing"]["boundary"],
+        )
 
 
 class CuratedSyncTest(unittest.TestCase):
@@ -163,6 +181,134 @@ curated_post_ids = [{ids}]
             conn.close()
         self.assertEqual(meme_slug, "fanlaji")
         self.assertEqual(baseline_slug, "fanlaji")
+
+
+class ConfirmedBoundaryReplayTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.old_db_path = store.DB_PATH
+        self.old_ledger_path = store.LEDGER_DB_PATH
+        store.DB_PATH = Path(self.temp_dir.name) / "test.db"
+        store.LEDGER_DB_PATH = Path(self.temp_dir.name) / "ledger.db"
+        store.init_db()
+
+    def tearDown(self) -> None:
+        store.DB_PATH = self.old_db_path
+        store.LEDGER_DB_PATH = self.old_ledger_path
+        self.temp_dir.cleanup()
+
+    def _set_post(self, post_id: str, text: str) -> None:
+        conn = store.connect()
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO posts (id, text_plain) VALUES (?, ?)",
+                (post_id, text),
+            )
+            conn.execute(
+                "UPDATE posts SET text_plain = ? WHERE id = ?",
+                (text, post_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _statuses(self, post_id: str) -> dict[str, set[str]]:
+        conn = store.connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT meme_slug, status
+                FROM baseline_candidates
+                WHERE baseline_version = 'baseline-rule65'
+                  AND post_id = ?
+                ORDER BY observed_at DESC
+                """,
+                (post_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        statuses: dict[str, set[str]] = {}
+        for row in rows:
+            statuses.setdefault(row["meme_slug"], set()).add(row["status"])
+        return statuses
+
+    def test_confirmed_human_boundaries_replay_through_rules(self) -> None:
+        seed = memes.load_seed()
+        for item in seed:
+            for post_id in item.get("curated_post_ids") or []:
+                self._set_post(str(post_id), "")
+
+        cases = {
+            "5234028678220391": (
+                "一到家，奶奶和弟弟就和我说今天钱钱哥又偷妹妹有屎的纸尿裤了",
+                "chishi",
+            ),
+            "5223004414149306": ("早上好🌞小胖狗～", "pangshou-erxiangxing"),
+            "5219598859240577": (
+                "保安大叔问是不是那只胖狗脖子是白色的",
+                "pangshou-erxiangxing",
+            ),
+            "5232897495401918": ("减肥失败☹️", "pangshou-erxiangxing"),
+            "5246370361640174": (
+                "胖的还在吃，瘦的已经睡觉了",
+                "pangshou-erxiangxing",
+            ),
+            "5231732026510004": ("您的快递📦正在打包～", "shouli"),
+            "5235115999366135": ("全是钱钱的快递📦", "shouli"),
+        }
+        for post_id, (text, _) in cases.items():
+            self._set_post(post_id, text)
+        self._set_post("5219209567277286", "昨天偷吃太多了，饿他两天！")
+        self._set_post("5313804204247818", "垃圾桶放在地上没一分钟！")
+
+        self._set_post("human-1", "没有自动命中词的微博")
+        store.link_post_meme(
+            "human-1",
+            "pangshou-erxiangxing",
+            "人工审定",
+            matched_by="human",
+        )
+
+        baseline.build("baseline-rule65")
+
+        for post_id, (_, meme_slug) in cases.items():
+            self.assertIn(
+                "published",
+                self._statuses(post_id).get(meme_slug, set()),
+                post_id,
+            )
+
+        self.assertIn(
+            "published",
+            self._statuses("5219209567277286").get("touchi", set()),
+        )
+        self.assertNotIn(
+            "published",
+            self._statuses("5219209567277286").get(
+                "pangshou-erxiangxing", set()
+            ),
+        )
+        self.assertNotIn(
+            "published",
+            self._statuses("5313804204247818").get("chishi", set()),
+        )
+        self.assertIn(
+            "published",
+            self._statuses("5313804204247818").get("fanlaji", set()),
+        )
+
+        conn = store.connect()
+        try:
+            human_links = {
+                row["meme_slug"]: row["matched_by"]
+                for row in conn.execute(
+                    "SELECT meme_slug, matched_by FROM post_memes WHERE post_id = ?",
+                    ("human-1",),
+                ).fetchall()
+            }
+        finally:
+            conn.close()
+        self.assertEqual(human_links.get("pangshou-erxiangxing"), "human")
 
 
 if __name__ == "__main__":
