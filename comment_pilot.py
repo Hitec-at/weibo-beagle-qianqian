@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -28,16 +29,18 @@ def _like_count(comment: dict) -> int:
         return 0
 
 
-def select_posts(limit: int = 20) -> list[dict]:
-    """按新入库优先、N宗罪/互动分层轮转选择未处理的微博。"""
-    if not 1 <= limit <= COMMENT_MAX_POSTS:
-        raise ValueError(f"评论挖掘最多选择 {COMMENT_MAX_POSTS} 条微博")
+def _select_exploration_posts(
+    limit: int, excluded_ids: set[str] | None = None
+) -> list[dict]:
+    """按新入库优先、N宗罪/互动分层轮转选择探索微博。"""
+    excluded_ids = excluded_ids or set()
 
     def pending(rows: list[dict]) -> list[dict]:
         return [
             row
             for row in rows
-            if (store.comment_thread(row["id"]) or {}).get("source") != "pilot"
+            if row["id"] not in excluded_ids
+            and (store.comment_thread(row["id"]) or {}).get("source") != "pilot"
         ]
 
     def priority(row: dict) -> tuple[str, int, int]:
@@ -76,7 +79,7 @@ def select_posts(limit: int = 20) -> list[dict]:
     buckets.sort(key=lambda bucket: priority(bucket[1][0]), reverse=True)
 
     selected: list[dict] = []
-    seen: set[str] = set()
+    seen: set[str] = set(excluded_ids)
     offsets = [0 for _ in buckets]
     while len(selected) < limit and any(
         offset < len(bucket[1]) for offset, bucket in zip(offsets, buckets)
@@ -93,7 +96,7 @@ def select_posts(limit: int = 20) -> list[dict]:
                     {
                         **post,
                         "selection_reason": reason,
-                        "selection_rank": len(selected) + 1,
+                        "selection_source": "exploration",
                     }
                 )
                 progressed = True
@@ -102,6 +105,140 @@ def select_posts(limit: int = 20) -> list[dict]:
                 break
         if not progressed:
             break
+    return selected
+
+
+def _candidate_priority_posts(limit: int) -> list[dict]:
+    """返回最需要评论证据的候选微博，同一微博只保留一次。"""
+    from candidate_review import pending_items
+
+    human_rows = store.candidate_reviews_needing_human()
+    human_ids = {str(row["post_id"]) for row in human_rows}
+    signals: dict[str, dict] = {}
+
+    def add_signal(
+        post_id: str,
+        meme_slug: str,
+        source: str,
+        observed_at: str,
+        reason: str,
+    ) -> None:
+        post = store.get_post(post_id)
+        if not post:
+            return
+        if (store.comment_thread(post_id) or {}).get("source") == "pilot":
+            return
+        item = signals.setdefault(
+            post_id,
+            {
+                "post": post,
+                "meme_slugs": set(),
+                "sources": set(),
+                "observed_at": "",
+                "human_review": post_id in human_ids,
+                "reasons": set(),
+            },
+        )
+        item["meme_slugs"].add(meme_slug)
+        item["sources"].add(source)
+        item["observed_at"] = max(item["observed_at"], observed_at or "")
+        item["reasons"].add(reason)
+
+    for row in human_rows:
+        add_signal(
+            str(row["post_id"]),
+            str(row["meme_slug"]),
+            str(row["source_type"]),
+            str(row["reviewed_at"] or ""),
+            "人工待审",
+        )
+
+    for item in pending_items():
+        baseline = item.get("baseline") or {}
+        add_signal(
+            str(item["post_id"]),
+            str(item["meme_slug"]),
+            str(baseline.get("source") or ""),
+            str(baseline.get("observed_at") or ""),
+            "待审核候选",
+        )
+
+    def priority(item: dict) -> tuple[int, int, int, str]:
+        post = item["post"]
+        return (
+            0 if item["human_review"] else 1,
+            0 if not store.comment_thread(str(post["id"])) else 1,
+            0 if "weibo_search" in item["sources"] else 1,
+            str(item["observed_at"]),
+        )
+
+    priority_by_id = {
+        post_id: priority(item) for post_id, item in signals.items()
+    }
+    buckets: dict[str, list[dict]] = defaultdict(list)
+    for item in signals.values():
+        bucket = min(item["meme_slugs"])
+        post = item["post"]
+        reasons = "、".join(sorted(item["reasons"]))
+        buckets[bucket].append(
+            {
+                **post,
+                "selection_reason": f"候选优先:{reasons}:{bucket}",
+                "selection_source": "candidate",
+            }
+        )
+    for rows in buckets.values():
+        rows.sort(key=lambda row: priority_by_id[str(row["id"])], reverse=True)
+
+    ordered_buckets = sorted(
+        buckets.values(),
+        key=lambda rows: priority_by_id[str(rows[0]["id"])],
+        reverse=True,
+    )
+    selected: list[dict] = []
+    offsets = [0 for _ in ordered_buckets]
+    while len(selected) < limit and any(
+        offset < len(rows) for offset, rows in zip(offsets, ordered_buckets)
+    ):
+        progressed = False
+        for index, rows in enumerate(ordered_buckets):
+            if offsets[index] >= len(rows):
+                continue
+            selected.append(rows[offsets[index]])
+            offsets[index] += 1
+            progressed = True
+            if len(selected) >= limit:
+                break
+        if not progressed:
+            break
+    return selected
+
+
+def select_posts(
+    limit: int = 20,
+    strategy: str = "legacy",
+    candidate_count: int = 12,
+) -> list[dict]:
+    """选择评论微博；候选优先模式仅显式开启，不影响现有默认行为。"""
+    if not 1 <= limit <= COMMENT_MAX_POSTS:
+        raise ValueError(f"评论挖掘最多选择 {COMMENT_MAX_POSTS} 条微博")
+    if strategy not in {"legacy", "candidate-first"}:
+        raise ValueError(f"未知评论选帖模式：{strategy}")
+    if strategy == "candidate-first" and not 0 <= candidate_count <= limit:
+        raise ValueError("候选评论数必须介于 0 和样本数之间")
+
+    selected: list[dict] = []
+    if strategy == "candidate-first":
+        selected = _candidate_priority_posts(candidate_count)
+
+    seen = {str(post["id"]) for post in selected}
+    remaining = limit - len(selected)
+    if remaining:
+        selected.extend(
+            _select_exploration_posts(remaining, excluded_ids=seen)
+        )
+    for index, post in enumerate(selected, start=1):
+        post["selection_rank"] = index
     return selected
 
 
@@ -367,7 +504,11 @@ def _author_liked_label(row: dict) -> str:
     return "是" if row["author_liked"] else "否"
 
 
-def export(posts: list[dict], output_dir: Path) -> dict:
+def export(
+    posts: list[dict],
+    output_dir: Path,
+    strategy: str = "legacy",
+) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     package = []
     for post in posts:
@@ -392,6 +533,8 @@ def export(posts: list[dict], output_dir: Path) -> dict:
 
     lines = [
         "# 评论挖掘审核包",
+        "",
+        f"选帖模式：{strategy}",
         "",
         "说明：每条微博只取一级评论首页；保存接口返回的全部根评论，"
         "并标记默认前 10 与点赞前 5。"
