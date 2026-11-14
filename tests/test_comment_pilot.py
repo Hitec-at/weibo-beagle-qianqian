@@ -319,6 +319,161 @@ curated_post_ids = ["{index}", "{index + 4}", "{index + 8}", "{index + 12}", "{i
         self.assertIn("| 12 | 1 | 高赞 |", markdown)
         self.assertIn("| 未知 |", markdown)
 
+    def test_candidate_first_reserves_candidate_quota_and_fills_exploration(self) -> None:
+        conn = store.connect()
+        try:
+            conn.execute(
+                "INSERT INTO memes (slug, name, explanation, boundary) "
+                "VALUES ('test-meme', '测试条目', '测试定义', '测试边界')"
+            )
+            for number in range(1, 31):
+                conn.execute(
+                    "INSERT INTO posts "
+                    "(id, text_plain, fetched_at, ts, comments_count) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        str(number),
+                        f"post {number} 比格犬受害者联盟",
+                        f"2026-11-{number:02d}T00:00:00+00:00",
+                        number,
+                        number,
+                    ),
+                )
+            for number in range(1, 16):
+                conn.execute(
+                    "INSERT INTO baseline_candidates "
+                    "(baseline_version, post_id, meme_slug, source, query, "
+                    "matched_term, status, observed_at) "
+                    "VALUES ('v1', ?, 'test-meme', 'local', '测试', "
+                    "'测试', 'candidate', ?)",
+                    (
+                        str(number),
+                        f"2026-11-{number:02d}T01:00:00Z",
+                    ),
+                )
+            for number in range(21, 31):
+                conn.execute(
+                    "INSERT INTO post_categories (post_id, category) "
+                    "VALUES (?, 'interactions')",
+                    (str(number),),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        posts = comment_pilot.select_posts(
+            limit=20,
+            strategy="candidate-first",
+            candidate_count=12,
+        )
+
+        self.assertEqual(len(posts), 20)
+        self.assertEqual(len({post["id"] for post in posts}), 20)
+        self.assertEqual(
+            [post["selection_source"] for post in posts[:12]],
+            ["candidate"] * 12,
+        )
+        self.assertEqual(
+            [post["selection_source"] for post in posts[12:]],
+            ["exploration"] * 8,
+        )
+        self.assertEqual([post["selection_rank"] for post in posts], list(range(1, 21)))
+
+    def test_candidate_first_falls_back_when_candidate_pool_is_small(self) -> None:
+        conn = store.connect()
+        try:
+            conn.execute(
+                "INSERT INTO memes (slug, name, explanation, boundary) "
+                "VALUES ('test-meme', '测试条目', '测试定义', '测试边界')"
+            )
+            for number in range(1, 9):
+                conn.execute(
+                    "INSERT INTO posts (id, text_plain, fetched_at, ts) "
+                    "VALUES (?, ?, ?, ?)",
+                    (
+                        str(number),
+                        f"post {number} 比格犬受害者联盟",
+                        "2026-11-13",
+                        number,
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO post_categories (post_id, category) "
+                    "VALUES (?, 'interactions')",
+                    (str(number),),
+                )
+            for number in range(1, 4):
+                conn.execute(
+                    "INSERT INTO baseline_candidates "
+                    "(baseline_version, post_id, meme_slug, source, query, "
+                    "matched_term, status, observed_at) "
+                    "VALUES ('v1', ?, 'test-meme', 'local', '测试', "
+                    "'测试', 'candidate', '2026-11-13T01:00:00Z')",
+                    (str(number),),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+        posts = comment_pilot.select_posts(
+            limit=6,
+            strategy="candidate-first",
+            candidate_count=5,
+        )
+
+        self.assertEqual(sum(post["selection_source"] == "candidate" for post in posts), 3)
+        self.assertEqual(
+            sum(post["selection_source"] == "exploration" for post in posts),
+            3,
+        )
+
+    def test_candidate_first_comments_reach_candidate_export(self) -> None:
+        conn = store.connect()
+        try:
+            conn.execute(
+                "INSERT INTO memes (slug, name, explanation, boundary) "
+                "VALUES ('test-meme', '测试条目', '测试定义', '测试边界')"
+            )
+            conn.execute(
+                "INSERT INTO posts (id, text_plain, comments_count) "
+                "VALUES ('100', '待审微博', 1)"
+            )
+            conn.execute(
+                "INSERT INTO baseline_candidates "
+                "(baseline_version, post_id, meme_slug, source, query, "
+                "matched_term, status, observed_at) "
+                "VALUES ('v1', '100', 'test-meme', 'local', '测试', "
+                "'测试', 'candidate', '2026-11-14T01:00:00Z')"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        posts = comment_pilot.select_posts(
+            limit=1,
+            strategy="candidate-first",
+            candidate_count=1,
+        )
+        self.assertEqual(posts[0]["id"], "100")
+        comment_pilot.save_page(
+            "100",
+            [{"idstr": "c1", "text_raw": "评论证据", "total_number": 0}],
+            "next",
+            "pilot",
+        )
+
+        import candidate_review
+
+        manifest = candidate_review.export_batches(
+            Path(self.temp_dir.name) / "candidate-export",
+            limit=10,
+            batch_size=10,
+        )
+        batch = json.loads(
+            Path(manifest["batches"][0]["path"]).read_text(encoding="utf-8")
+        )
+        self.assertEqual(batch["items"][0]["comments"]["roots"][0]["text"], "评论证据")
+
 
 if __name__ == "__main__":
     unittest.main()

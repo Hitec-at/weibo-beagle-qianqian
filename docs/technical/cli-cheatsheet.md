@@ -98,6 +98,9 @@ $PYBIN wbq.py comments-pilot
     # 离线选择最多 20 条未处理 N宗罪/互动样本，新入库优先、分类轮转
 $PYBIN wbq.py comments-pilot --fetch --output dist/comment-pilot
     # 每帖抓一级评论首页，并导出包含全部根评论的 JSON/Markdown 审核包
+$PYBIN wbq.py comments-pilot --strategy candidate-first \
+    --candidate-count 12 --fetch --output dist/comment-pilot
+    # 试运行：12 帖优先给待审候选，另外 8 帖用于探索
 ```
 
 评论挖掘最多 20 条；每条只有一次一级评论首页请求，网络错误、400、风控和额度
@@ -136,6 +139,22 @@ $PYBIN wbq.py comments-pilot --fetch --output dist/comment-pilot
 `accept` 和 `reject` 必须有非空证据；`defer` 会继续留在人工待办中。命令会先校验
 整批 candidate_key 和当前状态，再用一个事务写入；任一决定失败时整批不生效。
 同一决定可重复提交，已得到不同最终决定的候选不会被静默覆盖。
+
+## 每日完成清单与统一人审
+
+```bash
+.venv/bin/python daily_ops.py manifest \
+  --state dist/daily-ops/STAMP/state.json --output dist/daily-ops/STAMP
+
+.venv/bin/python daily_ops.py review \
+  --candidate-dir dist/candidate-review/STAMP \
+  --proposals dist/comment-review/STAMP/semantic-proposals.json \
+  --manifest dist/daily-ops/DAILY_STAMP/run-manifest.json \
+  --stamp REVIEW_STAMP --output dist/daily-review/REVIEW_STAMP
+```
+
+详见 `docs/review/daily-ops-v2.md` 和
+`docs/review/semantic-proposals-v1.md`。
 
 ## 跑站点
 

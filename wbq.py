@@ -227,9 +227,14 @@ def cmd_comments_pilot(args) -> int:
     from fetch_weibo import WeiboAuthError, WeiboBlocked
 
     store.init_db()
-    posts = comment_pilot.select_posts(limit=args.limit)
+    posts = comment_pilot.select_posts(
+        limit=args.limit,
+        strategy=args.strategy,
+        candidate_count=args.candidate_count,
+    )
     exit_code = 0
     result = {
+        "selection_strategy": args.strategy,
         "selected_posts": len(posts),
         "posts": [
             {
@@ -248,7 +253,11 @@ def cmd_comments_pilot(args) -> int:
             print(f"[停止] {exc}", file=sys.stderr)
             exit_code = 2
     if args.output:
-        result["export"] = comment_pilot.export(posts, Path(args.output))
+        result["export"] = comment_pilot.export(
+            posts,
+            Path(args.output),
+            strategy=args.strategy,
+        )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return exit_code
 
@@ -470,6 +479,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cp.add_argument("--fetch", action="store_true", help="联网抓取；默认只做离线选样")
     cp.add_argument("--output", default=None, help="导出审核包的目录")
+    cp.add_argument(
+        "--strategy",
+        choices=("legacy", "candidate-first"),
+        default="legacy",
+        help="选帖模式；默认保持现有流程",
+    )
+    cp.add_argument(
+        "--candidate-count",
+        type=int,
+        default=12,
+        help="候选优先模式下用于待审候选的帖子数",
+    )
 
     s = sub.add_parser("photos", help="高清图筛选")
     s.add_argument("--threshold", type=int, default=None, help="转评总数阈值，默认取 config.PHOTO_MIN_ENGAGEMENT")
