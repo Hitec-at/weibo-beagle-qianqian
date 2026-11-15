@@ -6,6 +6,8 @@ import json
 import math
 from pathlib import Path
 
+import store
+
 MANIFEST_SCHEMA_VERSION = 1
 PROPOSAL_SCHEMA_VERSION = "semantic-proposals-v1"
 PROPOSAL_KINDS = {
@@ -26,6 +28,132 @@ def _write_json(path: Path, payload: dict | list) -> None:
     )
 
 
+def capture_classification_counts(connection=None) -> dict:
+    """Capture category and N宗罪 association counts for delta reporting."""
+    own_connection = connection is None
+    if connection is None:
+        store.init_db()
+        connection = store.connect()
+    try:
+        category_rows = connection.execute(
+            """
+            SELECT category, COUNT(*) AS associations,
+                   COUNT(DISTINCT post_id) AS unique_posts
+            FROM post_categories
+            GROUP BY category
+            ORDER BY category
+            """
+        ).fetchall()
+        meme_rows = connection.execute(
+            """
+            SELECT meme_slug, COUNT(*) AS associations,
+                   COUNT(DISTINCT post_id) AS unique_posts
+            FROM post_memes
+            GROUP BY meme_slug
+            ORDER BY meme_slug
+            """
+        ).fetchall()
+    finally:
+        if own_connection:
+            connection.close()
+
+    return {
+        "categories": {
+            str(row["category"]): {
+                "associations": int(row["associations"]),
+                "unique_posts": int(row["unique_posts"]),
+            }
+            for row in category_rows
+        },
+        "memes": {
+            str(row["meme_slug"]): {
+                "associations": int(row["associations"]),
+                "unique_posts": int(row["unique_posts"]),
+            }
+            for row in meme_rows
+        },
+    }
+
+
+def _validated_count_map(value, label: str) -> dict[str, dict[str, int]]:
+    if value in (None, {}):
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} 必须是对象")
+    normalized = {}
+    for key in sorted(value):
+        counts = value[key]
+        if not isinstance(counts, dict):
+            raise ValueError(f"{label}.{key} 必须是对象")
+        associations = int(counts.get("associations") or 0)
+        unique_posts = int(counts.get("unique_posts") or 0)
+        if associations < 0 or unique_posts < 0:
+            raise ValueError(f"{label}.{key} 不能为负数")
+        normalized[str(key)] = {
+            "associations": associations,
+            "unique_posts": unique_posts,
+        }
+    return normalized
+
+
+def _validated_classification_counts(
+    value,
+) -> dict[str, dict[str, dict[str, int]]]:
+    if value in (None, {}):
+        return {"categories": {}, "memes": {}}
+    if not isinstance(value, dict):
+        raise ValueError("classification_counts 必须是对象")
+    return {
+        "categories": _validated_count_map(
+            value.get("categories"), "classification_counts.categories"
+        ),
+        "memes": _validated_count_map(
+            value.get("memes"), "classification_counts.memes"
+        ),
+    }
+
+
+def _delta_rows(
+    before: dict[str, dict[str, int]],
+    after: dict[str, dict[str, int]],
+    key_name: str,
+) -> list[dict]:
+    rows = []
+    for key in sorted(set(before) | set(after)):
+        previous = before.get(key, {})
+        current = after.get(key, {})
+        before_associations = int(previous.get("associations") or 0)
+        after_associations = int(current.get("associations") or 0)
+        before_posts = int(previous.get("unique_posts") or 0)
+        after_posts = int(current.get("unique_posts") or 0)
+        rows.append(
+            {
+                key_name: key,
+                "before_associations": before_associations,
+                "after_associations": after_associations,
+                "association_delta": after_associations - before_associations,
+                "before_unique_posts": before_posts,
+                "after_unique_posts": after_posts,
+                "unique_posts_delta": after_posts - before_posts,
+            }
+        )
+    return rows
+
+
+def classification_deltas(before: dict, after: dict) -> dict:
+    """Return signed deltas for categories and N宗罪 meme associations."""
+    previous = _validated_classification_counts(before)
+    current = _validated_classification_counts(after)
+    return {
+        "category_deltas": _delta_rows(
+            previous["categories"], current["categories"], "category"
+        ),
+        "meme_deltas": _delta_rows(
+            previous["memes"], current["memes"], "meme_slug"
+        ),
+    }
+
+
 def write_run_manifest(output_dir: str | Path, state: dict) -> dict:
     """校验并写入每日任务完成清单。"""
     if state.get("status") not in {"success", "failed"}:
@@ -36,6 +164,22 @@ def write_run_manifest(output_dir: str | Path, state: dict) -> dict:
         raise ValueError("request_ledger 必须是对象")
     if not isinstance(state.get("data"), dict):
         raise ValueError("data 必须是对象")
+
+    before_counts = state.get("classification_before") or {}
+    after_counts = state.get("classification_after") or {}
+    has_before = before_counts not in ({}, None)
+    has_after = after_counts not in ({}, None)
+    if state["status"] == "success" and bool(has_before) != bool(has_after):
+        raise ValueError(
+            "成功清单必须同时提供 classification_before 和 classification_after"
+        )
+    checked_before = _validated_classification_counts(before_counts)
+    checked_after = _validated_classification_counts(after_counts)
+    deltas = (
+        classification_deltas(checked_before, checked_after)
+        if has_before and has_after
+        else {"category_deltas": [], "meme_deltas": []}
+    )
 
     request_ledger = state["request_ledger"]
     used = int(request_ledger.get("used") or 0)
@@ -58,6 +202,11 @@ def write_run_manifest(output_dir: str | Path, state: dict) -> dict:
         "data": state["data"],
         "baseline": state.get("baseline") or {},
         "artifacts": state.get("artifacts") or {},
+        "classification_counts": {
+            "before": checked_before if has_before else {},
+            "after": checked_after if has_after else {},
+        },
+        **deltas,
         "failed_stage": state.get("failed_stage") or "",
         "error": state.get("error") or "",
     }
@@ -257,6 +406,9 @@ def build_parser() -> argparse.ArgumentParser:
     manifest.add_argument("--output", required=True)
     manifest.add_argument("--state", required=True, help="任务状态 JSON")
 
+    counts = sub.add_parser("counts", help="采集当前分类和 N宗罪关联数量")
+    counts.add_argument("--output", required=True)
+
     review = sub.add_parser("review", help="生成统一人审清单")
     review.add_argument("--candidate-dir", required=True)
     review.add_argument("--output", required=True)
@@ -271,6 +423,15 @@ def main(argv=None) -> int:
     if args.command == "manifest":
         state = json.loads(Path(args.state).read_text(encoding="utf-8"))
         result = write_run_manifest(args.output, state)
+    elif args.command == "counts":
+        counts = capture_classification_counts()
+        output = Path(args.output)
+        _write_json(output, counts)
+        result = {
+            "path": str(output),
+            "categories": len(counts["categories"]),
+            "memes": len(counts["memes"]),
+        }
     else:
         result = build_review_dossier(
             args.candidate_dir,
