@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,79 @@ class DailyOpsTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+    def test_capture_classification_counts(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        connection.row_factory = sqlite3.Row
+        connection.executescript(
+            """
+            CREATE TABLE post_categories (post_id TEXT, category TEXT);
+            CREATE TABLE post_memes (post_id TEXT, meme_slug TEXT);
+            INSERT INTO post_categories VALUES
+                ('100', 'hot'), ('200', 'hot'), ('200', 'interactions');
+            INSERT INTO post_memes VALUES
+                ('100', 'chishi'), ('100', 'touchi'), ('200', 'chishi');
+            """
+        )
+
+        counts = daily_ops.capture_classification_counts(connection)
+        connection.close()
+
+        self.assertEqual(
+            counts["categories"],
+            {
+                "hot": {"associations": 2, "unique_posts": 2},
+                "interactions": {"associations": 1, "unique_posts": 1},
+            },
+        )
+        self.assertEqual(
+            counts["memes"],
+            {
+                "chishi": {"associations": 2, "unique_posts": 2},
+                "touchi": {"associations": 1, "unique_posts": 1},
+            },
+        )
+
+    def test_classification_deltas_keep_positive_zero_and_negative_changes(
+        self,
+    ) -> None:
+        result = daily_ops.classification_deltas(
+            {
+                "categories": {
+                    "gone": {"associations": 2, "unique_posts": 2},
+                    "hot": {"associations": 3, "unique_posts": 2},
+                    "same": {"associations": 1, "unique_posts": 1},
+                },
+                "memes": {
+                    "chishi": {"associations": 2, "unique_posts": 2}
+                },
+            },
+            {
+                "categories": {
+                    "hot": {"associations": 5, "unique_posts": 4},
+                    "new": {"associations": 1, "unique_posts": 1},
+                    "same": {"associations": 1, "unique_posts": 1},
+                },
+                "memes": {
+                    "chishi": {"associations": 1, "unique_posts": 1},
+                    "touchi": {"associations": 3, "unique_posts": 2},
+                },
+            },
+        )
+
+        categories = {
+            row["category"]: row for row in result["category_deltas"]
+        }
+        self.assertEqual(categories["hot"]["association_delta"], 2)
+        self.assertEqual(categories["hot"]["unique_posts_delta"], 2)
+        self.assertEqual(categories["same"]["association_delta"], 0)
+        self.assertEqual(categories["gone"]["association_delta"], -2)
+        self.assertEqual(categories["new"]["association_delta"], 1)
+
+        memes = {row["meme_slug"]: row for row in result["meme_deltas"]}
+        self.assertEqual(memes["chishi"]["association_delta"], -1)
+        self.assertEqual(memes["touchi"]["association_delta"], 3)
+        self.assertEqual(memes["touchi"]["unique_posts_delta"], 2)
 
     def test_success_manifest_records_request_and_release(self) -> None:
         result = daily_ops.write_run_manifest(
@@ -42,6 +116,89 @@ class DailyOpsTest(unittest.TestCase):
         self.assertEqual(manifest["status"], "success")
         self.assertEqual(manifest["request_ledger"]["remaining"], 53)
         self.assertEqual(manifest["data"]["posts"], 5005)
+        self.assertEqual(manifest["category_deltas"], [])
+        self.assertEqual(manifest["meme_deltas"], [])
+
+    def test_manifest_records_classification_deltas_idempotently(self) -> None:
+        state = {
+            "stamp": "20261114T010000Z",
+            "status": "success",
+            "request_ledger": {"used": 447, "limit": 500},
+            "data": {
+                "release": "data-20261114T020000Z",
+                "asset_name": "weibo.db.gz",
+                "sha256": "a" * 64,
+            },
+            "baseline": {"version": "baseline-20261114T010000Z"},
+            "classification_before": {
+                "categories": {
+                    "hot": {"associations": 2, "unique_posts": 2}
+                },
+                "memes": {
+                    "chishi": {"associations": 1, "unique_posts": 1}
+                },
+            },
+            "classification_after": {
+                "categories": {
+                    "hot": {"associations": 4, "unique_posts": 3},
+                    "interactions": {
+                        "associations": 1,
+                        "unique_posts": 1,
+                    },
+                },
+                "memes": {
+                    "chishi": {"associations": 2, "unique_posts": 2},
+                    "touchi": {"associations": 1, "unique_posts": 1},
+                },
+            },
+        }
+
+        first = daily_ops.write_run_manifest(self.root, state)
+        first_payload = json.loads(
+            Path(first["path"]).read_text(encoding="utf-8")
+        )
+        second = daily_ops.write_run_manifest(self.root, state)
+        second_payload = json.loads(
+            Path(second["path"]).read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(first_payload, second_payload)
+        categories = {
+            row["category"]: row for row in first_payload["category_deltas"]
+        }
+        self.assertEqual(categories["hot"]["association_delta"], 2)
+        self.assertEqual(categories["interactions"]["association_delta"], 1)
+        memes = {
+            row["meme_slug"]: row for row in first_payload["meme_deltas"]
+        }
+        self.assertEqual(memes["chishi"]["association_delta"], 1)
+        self.assertEqual(memes["touchi"]["association_delta"], 1)
+
+    def test_success_manifest_requires_both_classification_snapshots(self) -> None:
+        with self.assertRaises(ValueError):
+            daily_ops.write_run_manifest(
+                self.root,
+                {
+                    "stamp": "20261114T010000Z",
+                    "status": "success",
+                    "request_ledger": {"used": 10, "limit": 500},
+                    "data": {
+                        "release": "data-20261114T020000Z",
+                        "asset_name": "weibo.db.gz",
+                        "sha256": "a" * 64,
+                    },
+                    "baseline": {"version": "baseline-20261114T010000Z"},
+                    "classification_before": {
+                        "categories": {
+                            "hot": {
+                                "associations": 2,
+                                "unique_posts": 2,
+                            }
+                        },
+                        "memes": {},
+                    },
+                },
+            )
 
     def test_failed_manifest_requires_failed_stage(self) -> None:
         with self.assertRaises(ValueError):
