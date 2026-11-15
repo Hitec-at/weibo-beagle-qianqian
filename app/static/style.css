@@ -42,6 +42,8 @@ body {
 .srcvideo { display: block; width: 100%; max-height: 560px; margin: 0 0 10px; border-radius: 10px; background: #000; }
 .postvideo { display: block; width: 100%; max-height: 480px; margin: 0 0 10px; border-radius: 10px; background: #000; }
 .videolabel { color: var(--muted); font-size: 12px; margin: -4px 0 10px; }
+.video-error { margin: -4px 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--muted); font-size: 13px; }
+.video-error a { color: var(--fg); text-decoration: underline; }
 .pager { display: flex; align-items: center; justify-content: center; gap: 18px; margin: 26px 0 0; font-size: 14px; }
 .pager a { color: var(--brand); text-decoration: none; }
 .pager .off { color: var(--muted); opacity: 0.45; }

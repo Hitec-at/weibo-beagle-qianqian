@@ -48,7 +48,11 @@
       const video = event.target && event.target.closest ? event.target.closest("video") : null;
       if (!video) return;
       const retries = Number(video.dataset.retry || 0);
-      if (retries >= 2) return;
+      if (retries >= 2) {
+        const fallback = video.parentElement && video.parentElement.querySelector(".video-error");
+        if (fallback) fallback.hidden = false;
+        return;
+      }
       const source = video.querySelector("source");
       const base = source ? source.getAttribute("src") : video.getAttribute("src");
       if (!base) return;
