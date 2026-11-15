@@ -124,8 +124,13 @@ FETCH_LONGTEXT = os.environ.get("FETCH_LONGTEXT", "1") == "1"
 FETCH_PIC_INFO = os.environ.get("FETCH_PIC_INFO", "1") == "1"
 
 # ---- 公网视频代理 ----
-# 默认开启按需刷新：仅当用户播放视频且直链过期时才请求微博接口。
-ENABLE_VIDEO_REFRESH = os.environ.get("ENABLE_VIDEO_REFRESH", "1") == "1"
+# 登录态刷新只作为显式启用的兼容路径。公网默认使用游客接口，不读取 Cookie。
+ENABLE_VIDEO_REFRESH = os.environ.get("ENABLE_VIDEO_REFRESH", "0") == "1"
+ENABLE_GUEST_VIDEO_REFRESH = (
+    os.environ.get("ENABLE_GUEST_VIDEO_REFRESH", "1") == "1"
+)
+VIDEO_CACHE_REFRESH_SECONDS = env_int("VIDEO_CACHE_REFRESH_SECONDS", 600)
+VIDEO_REFRESH_COOLDOWN_SECONDS = env_int("VIDEO_REFRESH_COOLDOWN_SECONDS", 60)
 
 # ---- 存储 ----
 _DB_RAW = os.environ.get("DB_PATH") or str(BASE_DIR / "data" / "weibo.db")

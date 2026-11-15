@@ -7,7 +7,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import quote, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit, urlunsplit
 
 import requests
 from fastapi import FastAPI, HTTPException, Request
@@ -209,9 +209,17 @@ VIDEO_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
-_VIDEO_LOCK = threading.Lock()
+VIDEO_COMPONENT_API = "https://h5.video.weibo.com/api/component"
+_VIDEO_LOCKS: dict[str, threading.Lock] = {}
+_VIDEO_LOCKS_GUARD = threading.Lock()
+_VIDEO_FAILURES: dict[str, float] = {}
 _DNS_CACHE: dict[str, tuple[str, float]] = {}
 _DNS_TTL = 300
+
+
+def _video_lock(key: str) -> threading.Lock:
+    with _VIDEO_LOCKS_GUARD:
+        return _VIDEO_LOCKS.setdefault(key, threading.Lock())
 
 
 def _video_data(node: dict) -> dict:
@@ -232,6 +240,39 @@ def _video_data(node: dict) -> dict:
     return {}
 
 
+def _normalise_video_oid(value: object) -> str:
+    oid = str(value or "").strip()
+    return oid if re.fullmatch(r"\d{1,10}:\d{6,30}", oid) else ""
+
+
+def _video_oid(node: dict) -> str:
+    """从普通或混合媒体节点中取得只含数字的微博视频对象 id。"""
+    data = _video_data(node)
+    if not data:
+        return ""
+    media = data.get("media_info") or {}
+    for value in (
+        data.get("object_id"),
+        data.get("oid"),
+        media.get("object_id"),
+        media.get("oid"),
+    ):
+        oid = _normalise_video_oid(value)
+        if oid:
+            return oid
+
+    media_id = str(media.get("media_id") or "").strip()
+    if media_id.isdigit():
+        return f"1034:{media_id}"
+
+    h5_url = str(media.get("h5_url") or data.get("page_url") or "")
+    try:
+        fid = (parse_qs(urlsplit(h5_url).query).get("fid") or [""])[0]
+    except ValueError:
+        fid = ""
+    return _normalise_video_oid(fid)
+
+
 def _video_meta(node: dict) -> dict | None:
     pi = _video_data(node)
     if not pi:
@@ -250,9 +291,14 @@ def _video_meta(node: dict) -> dict | None:
     poster = (big.get("pic_big") or {}).get("url") if isinstance(big, dict) else ""
     if not poster:
         poster = pi.get("page_pic") or ""
+    oid = _video_oid(node)
+    page_url = mi.get("h5_url") or pi.get("page_url") or ""
+    if not page_url and oid:
+        page_url = f"https://h5.video.weibo.com/tv/show/{oid}"
     return {
         "poster": poster,
-        "page_url": mi.get("h5_url") or pi.get("page_url") or "",
+        "page_url": page_url,
+        "oid": oid,
     }
 
 
@@ -309,7 +355,112 @@ def _cache_video(key: str, url: str, poster: str) -> dict:
     return {"url": url, "poster": poster, "expires_at": expires_at}
 
 
+def _is_weibo_video_url(url: str) -> bool:
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").lower()
+    return (
+        parsed.scheme in {"http", "https"}
+        and not parsed.username
+        and not parsed.password
+        and (host == "weibocdn.com" or host.endswith(".weibocdn.com"))
+    )
+
+
+def _normalise_guest_video_url(value: object) -> str:
+    url = str(value or "").strip()
+    if url.startswith("//"):
+        url = "https:" + url
+    elif url.startswith("http://"):
+        url = "https://" + url.removeprefix("http://")
+    return url if _is_weibo_video_url(url) else ""
+
+
+def _fetch_guest_video(node: dict) -> dict | None:
+    """用无 Cookie 的公开游客组件取得短期播放地址。"""
+    oid = _video_oid(node)
+    if not oid:
+        return None
+    page_path = f"/tv/show/{oid}"
+    payload = json.dumps(
+        {"Component_Play_Playinfo": {"oid": oid}},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    try:
+        response = requests.post(
+            VIDEO_COMPONENT_API,
+            params={"page": page_path},
+            data=f"data={payload}",
+            headers={
+                "User-Agent": VIDEO_UA,
+                "Referer": f"https://h5.video.weibo.com{page_path}",
+                "PAGE-REFERER": page_path,
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            timeout=12,
+        )
+    except requests.RequestException:
+        return None
+    if response.status_code != 200:
+        return None
+    try:
+        body = response.json()
+    except ValueError:
+        return None
+    if str(body.get("code")) != "100000":
+        return None
+    data = body.get("data") or {}
+    info = data.get("Component_Play_Playinfo") or {}
+    urls = info.get("urls") or {}
+    values: list[object] = []
+    if isinstance(urls, dict):
+        for label in ("高清 1080P", "高清 720P", "标清 480P"):
+            if label in urls:
+                values.append(urls[label])
+        values.extend(
+            value
+            for label, value in urls.items()
+            if label not in {"高清 1080P", "高清 720P", "标清 480P"}
+        )
+    elif isinstance(urls, list):
+        values.extend(urls)
+    values.append(info.get("stream_url"))
+
+    url = ""
+    for value in values:
+        candidate = value.get("url") if isinstance(value, dict) else value
+        url = _normalise_guest_video_url(candidate)
+        if url:
+            break
+    if not url:
+        return None
+    return {
+        "url": url,
+        "poster": str(info.get("cover_image") or ""),
+        "expires_at": _expires_at(url) or int(time.time()) + 3600,
+    }
+
+
+def _refresh_guest_video(node: dict, key: str) -> dict | None:
+    if not config.ENABLE_GUEST_VIDEO_REFRESH:
+        return None
+    now = time.time()
+    failed_at = _VIDEO_FAILURES.get(key, 0)
+    if failed_at and now < failed_at + config.VIDEO_REFRESH_COOLDOWN_SECONDS:
+        return None
+    fresh = _fetch_guest_video(node)
+    if not fresh:
+        _VIDEO_FAILURES[key] = now
+        return None
+    _VIDEO_FAILURES.pop(key, None)
+    return _cache_video(key, fresh["url"], fresh["poster"])
+
+
 def _refresh_video(p: dict, source: bool, key: str) -> dict | None:
+    """兼容显式启用的登录态刷新；公网默认关闭。"""
     if not config.ENABLE_VIDEO_REFRESH:
         return None
     node = _video_node(p, source)
@@ -335,19 +486,31 @@ def _refresh_video(p: dict, source: bool, key: str) -> dict | None:
 def resolve_video(p: dict, source: bool) -> dict | None:
     key = f"{p['id']}:{'rt' if source else 'self'}"
     now = int(time.time())
+    refresh_before = max(60, config.VIDEO_CACHE_REFRESH_SECONDS)
     cached = store.get_video_cache(key)
-    if cached and int(cached["expires_at"]) > now + 60:
+    if cached and int(cached["expires_at"]) > now + refresh_before:
         return cached
     node = _video_node(p, source)
     url = _video_url_of(node)
-    if url and _expires_at(url) > now + 60:
+    if url and _expires_at(url) > now + refresh_before:
         meta = _video_meta(node) or {}
         return _cache_video(key, url, meta.get("poster") or "")
-    with _VIDEO_LOCK:
+    stale = cached or (
+        {"url": url, "poster": (_video_meta(node) or {}).get("poster") or "", "expires_at": _expires_at(url)}
+        if url
+        else None
+    )
+    with _video_lock(key):
         cached = store.get_video_cache(key)
-        if cached and int(cached["expires_at"]) > now + 60:
+        if cached and int(cached["expires_at"]) > now + refresh_before:
             return cached
-        return _refresh_video(p, source, key)
+        fresh = _refresh_guest_video(node, key)
+        if fresh:
+            return fresh
+        fresh = _refresh_video(p, source, key)
+        if fresh:
+            return fresh
+        return stale
 
 
 def _doh_resolve(host: str) -> str:

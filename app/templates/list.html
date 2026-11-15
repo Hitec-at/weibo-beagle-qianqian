@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_video_player.html" import video_player %}
 {% block title %}{{ title }} · 比格钱钱 微博检索{% endblock %}
 {% block content %}
 <section class="page">
@@ -40,10 +41,7 @@
         <p class="excerpt">{{ excerpt(p['text_plain'], 120) }}</p>
         {% set vid = video_info(p) %}
         {% if vid and (not show_source or vid['source'] == 0) %}
-        <video class="postvideo" controls preload="none" playsinline{% if vid['poster'] %} poster="{{ img_proxy(vid['poster']) }}"{% endif %}>
-          <source src="/video/{{ p['id'] }}?source={{ vid['source'] }}" type="video/mp4">
-          当前浏览器不支持视频播放。
-        </video>
+        {{ video_player(p, vid) }}
         {% if vid['source'] == 1 %}<div class="videolabel">转发的源微博视频</div>{% endif %}
         {% endif %}
         {% if show_source %}
@@ -53,10 +51,7 @@
           <div class="srchead">源微博 · @{{ src['user'] }}</div>
           {% if src['text'] %}<p class="srctext">{{ excerpt(src['text'], 140) }}</p>{% endif %}
           {% if src['video'] %}
-          <video class="srcvideo" controls preload="none" playsinline{% if src['video']['poster'] %} poster="{{ img_proxy(src['video']['poster']) }}"{% endif %}>
-            <source src="/video/{{ p['id'] }}?source=1" type="video/mp4">
-            当前浏览器不支持视频播放。
-          </video>
+          {{ video_player(p, {'source': 1, 'poster': src['video']['poster'], 'page_url': src['video']['page_url']}, 'srcvideo') }}
           {% if src['video']['page_url'] %}<a class="more" href="{{ src['video']['page_url'] }}" target="_blank" rel="noopener">打开视频原页 →</a>{% endif %}
           {% endif %}
           {% if src['pics'] %}

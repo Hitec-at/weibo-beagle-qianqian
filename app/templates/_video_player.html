@@ -1,0 +1,11 @@
+{% macro video_player(post, video, class_name="postvideo") -%}
+<video class="{{ class_name }}" controls preload="none" playsinline{% if video.poster %} poster="{{ img_proxy(video.poster) }}"{% endif %}>
+  <source src="/video/{{ post.id }}?source={{ video.source }}" type="video/mp4">
+  当前浏览器不支持视频播放。
+</video>
+<div class="video-error" hidden>
+  当前视频暂时无法播放。请
+  <a href="{{ original_url(post) }}" target="_blank" rel="noopener">打开原微博</a>
+  {% if video.page_url %}或<a href="{{ video.page_url }}" target="_blank" rel="noopener">打开视频原页</a>{% endif %}。
+</div>
+{%- endmacro %}
