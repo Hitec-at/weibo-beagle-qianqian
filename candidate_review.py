@@ -40,6 +40,7 @@ def _meme_context(slug: str) -> dict:
         "slug": slug,
         "name": meme.get("name") or slug,
         "kind": meme.get("kind") or "behavior",
+        "status": meme.get("status") or "active",
         "origin": meme.get("origin") or "",
         "explanation": meme.get("explanation") or "",
         "boundary": meme.get("boundary") or "",
@@ -142,6 +143,9 @@ def pending_items(limit: int | None = None) -> list[dict]:
             continue
         post_id = str(item["post_id"])
         meme_slug = str(item["meme_slug"])
+        meme = _meme_context(meme_slug)
+        if meme["status"] != "active":
+            continue
         pending.append(
             {
                 "candidate_key": key,
@@ -155,7 +159,7 @@ def pending_items(limit: int | None = None) -> list[dict]:
                     "matched_term": item["matched_term"],
                     "observed_at": item["observed_at"],
                 },
-                "meme": _meme_context(meme_slug),
+                "meme": meme,
                 "post": _post_context(store.get_post(post_id)),
                 "comments": _comment_context(post_id),
             }

@@ -5,6 +5,8 @@
 #   .venv/bin/python wbq.py memes-import
 # match_mode 默认为 rule；若为 curated，则必须提供 curated_post_ids，
 # 并只关联人工审定的微博。
+# status 默认为 active；可设为 paused 或 deprecated。非 active 条目保留历史
+# 关联和审计数据，但不参与页面、baseline 或候选审核。
 
 [[memes]]
 slug = "chishi"
@@ -59,7 +61,7 @@ auto_publish_terms = [
     "瘦了一点", "胖吗", "胖的还在吃", "减肥失败",
 ]
 candidate_terms = [
-    "减肥", "五十斤", "48斤", "46斤", "瘦了", "没胖", "虚胖",
+    "减肥", "五十斤", "48斤", "46斤", "没胖", "虚胖",
     "吃不饱", "加餐", "罐头补偿", "胖", "瘦", "饿",
     "真狗比照片瘦", "制裁胖狗",
 ]
