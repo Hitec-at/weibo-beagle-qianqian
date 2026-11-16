@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 
 import app.main as main_module
 from app.main import img_proxy, is_sina_image_url, video_info
+from starlette.requests import Request
 
 
 class ImageProxySafetyTest(unittest.TestCase):
@@ -260,6 +261,100 @@ class GuestVideoPlaybackTest(unittest.TestCase):
         self.assertEqual(fetch_guest.call_count, 1)
         self.assertEqual(first["url"], "https://f.video.weibocdn.com/old.mp4?Expires=1")
         self.assertEqual(second["url"], first["url"])
+
+    def test_forced_guest_refresh_recovers_from_transient_failure(self) -> None:
+        post = {
+            "id": "102",
+            "is_video": 1,
+            "raw_json": json.dumps(self._ordinary_node()),
+        }
+        fresh = {
+            "url": "https://f.video.weibocdn.com/recovered.mp4?Expires=2000000000",
+            "poster": "",
+            "expires_at": 2000000000,
+        }
+        with (
+            patch.object(main_module.store, "get_video_cache", return_value=None),
+            patch.object(main_module.store, "set_video_cache"),
+            patch.object(
+                main_module,
+                "_fetch_guest_video",
+                side_effect=[None, fresh],
+            ) as fetch_guest,
+            patch.object(main_module.config, "ENABLE_VIDEO_REFRESH", False),
+        ):
+            first = main_module.resolve_video(post, False)
+            cooled_down = main_module.resolve_video(post, False)
+            recovered = main_module.resolve_video(
+                post, False, force_guest_refresh=True
+            )
+
+        self.assertEqual(fetch_guest.call_count, 2)
+        self.assertEqual(
+            first["url"],
+            "https://f.video.weibocdn.com/old.mp4?Expires=1",
+        )
+        self.assertEqual(cooled_down["url"], first["url"])
+        self.assertEqual(
+            recovered["url"],
+            "https://f.video.weibocdn.com/recovered.mp4?Expires=2000000000",
+        )
+        self.assertNotIn("102:self", main_module._VIDEO_FAILURES)
+
+    def test_video_route_forces_one_guest_retry_after_upstream_failure(self) -> None:
+        post = {
+            "id": "103",
+            "is_video": 1,
+            "raw_json": json.dumps(self._ordinary_node()),
+        }
+        stale = {
+            "url": "https://f.video.weibocdn.com/old.mp4?Expires=1",
+            "poster": "",
+            "expires_at": 1,
+        }
+        fresh = {
+            "url": "https://f.video.weibocdn.com/fresh.mp4?Expires=2000000000",
+            "poster": "",
+            "expires_at": 2000000000,
+        }
+        failed = Mock(status_code=403)
+        recovered = Mock(
+            status_code=206,
+            headers={
+                "Content-Type": "video/mp4",
+                "Content-Range": "bytes 0-0/1",
+            },
+        )
+        recovered.iter_content.return_value = [b"x"]
+        request = Request({"type": "http", "method": "GET", "headers": []})
+
+        with (
+            patch.object(main_module.store, "get_post", return_value=post),
+            patch.object(
+                main_module,
+                "resolve_video",
+                side_effect=[stale, fresh],
+            ) as resolve_video,
+            patch.object(
+                main_module.requests,
+                "get",
+                side_effect=[failed, recovered],
+            ),
+            patch.object(main_module, "_ip_fallback_url", return_value=""),
+            patch.object(main_module.store, "invalidate_video_cache"),
+            patch.object(main_module.config, "ENABLE_GUEST_VIDEO_REFRESH", True),
+            patch.object(main_module.time, "sleep"),
+        ):
+            response = main_module.video("103", request, source=0)
+
+        self.assertEqual(response.status_code, 206)
+        self.assertEqual(resolve_video.call_count, 2)
+        self.assertFalse(
+            resolve_video.call_args_list[0].kwargs["force_guest_refresh"]
+        )
+        self.assertTrue(
+            resolve_video.call_args_list[1].kwargs["force_guest_refresh"]
+        )
 
     def test_template_exposes_fallback_links(self) -> None:
         macro = main_module.templates.env.get_template(
