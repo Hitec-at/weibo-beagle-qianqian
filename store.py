@@ -354,6 +354,22 @@ def count_posts(where: str = "1=1", params: tuple = ()) -> int:
         conn.close()
 
 
+def post_time_range() -> dict:
+    """返回当前语料中含有效时间戳的最早、最晚微博时间。"""
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT MIN(ts) AS min_ts, MAX(ts) AS max_ts "
+            "FROM posts WHERE ts > 0"
+        ).fetchone()
+        return {
+            "min_ts": int(row["min_ts"]) if row["min_ts"] is not None else None,
+            "max_ts": int(row["max_ts"]) if row["max_ts"] is not None else None,
+        }
+    finally:
+        conn.close()
+
+
 def latest_post_id() -> str | None:
     conn = connect()
     try:
