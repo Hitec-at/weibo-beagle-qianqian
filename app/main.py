@@ -728,6 +728,7 @@ templates.env.globals.update(
     original_url=original_url,
     fmt_time=fmt_time,
     img_proxy=img_proxy,
+    post_time_range=store.post_time_range,
 )
 
 

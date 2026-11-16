@@ -63,6 +63,9 @@ body {
 .dmeta { color: var(--muted); font-size: 13px; }
 .empty { color: var(--muted); }
 .foot { max-width: 1080px; margin: 0 auto; padding: 0 22px 30px; color: var(--muted); font-size: 12px; }
+.foot p { margin: 0 0 8px; }
+.foot p:last-child { margin-bottom: 0; }
+.range { color: var(--fg); }
 .crumb { margin: 0 0 10px; font-size: 14px; }
 .crumb a, .backlink a { color: var(--brand); text-decoration: none; }
 .backlink { margin-top: 18px; }

@@ -25,6 +25,12 @@
     {% block content %}{% endblock %}
   </main>
   <footer class="foot">
+    {% set time_range = post_time_range() %}
+    {% if time_range.min_ts and time_range.max_ts %}
+    <p class="range">收录范围：{{ fmt_time(time_range.min_ts) }} 至 {{ fmt_time(time_range.max_ts) }}</p>
+    {% else %}
+    <p class="range">暂无收录微博</p>
+    {% endif %}
     <p>本站仅对 @比格钱钱 的公开微博做引用索引：短引文 + 缩略图预览 + 跳转原微博，版权归原作者所有。如涉侵权请告知，立即删除。</p>
   </footer>
   <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="图片预览" hidden>
