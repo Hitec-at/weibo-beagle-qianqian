@@ -31,6 +31,16 @@ store.init_db()
 CST = timezone(timedelta(hours=8))
 PAGE_SIZE = 20
 PHOTO_PAGE_SIZE = 24
+POST_SORT_OPTIONS = [
+    ("hot", "热门"),
+    ("latest", "最新"),
+    ("earliest", "最早"),
+]
+POST_SORT_TITLES = {
+    "hot": "热门推荐",
+    "latest": "最新微博",
+    "earliest": "最早微博",
+}
 WECHAT_VERIFICATION_NAME = "71fa4c3c7081e4ff84c5dd8b70e7daa6.txt"
 WECHAT_VERIFICATION_PATH = BASE_DIR / "static" / WECHAT_VERIFICATION_NAME
 WECHAT_VERIFICATION_CONTENT = "835f00a550e35a0cb7fefdffe4c272953e0603cd"
@@ -85,6 +95,11 @@ def sort_control(
             }
         )
     return {"current": current, "options": links}
+
+
+def post_sort_control(request: Request) -> dict:
+    """所有微博列表共用的排序入口：热门、最新、最早。"""
+    return sort_control(request, POST_SORT_OPTIONS, "hot")
 
 
 def original_url(p: dict) -> str:
@@ -719,18 +734,25 @@ templates.env.globals.update(
 @app.get("/")
 def home(request: Request, page: int = 1):
     total = store.count_posts()
-    pagination = pagination_context(request, total, page, PAGE_SIZE)
+    sort_control_data = post_sort_control(request)
+    sort_key = sort_control_data["current"]
+    pagination = pagination_context(request, total, page, PAGE_SIZE, sort_key)
     rows = store.query_posts(
-        "1=1", (), limit=PAGE_SIZE, order="hot", offset=(pagination["page"] - 1) * PAGE_SIZE
+        "1=1",
+        (),
+        limit=PAGE_SIZE,
+        order=sort_key,
+        offset=(pagination["page"] - 1) * PAGE_SIZE,
     )
     return templates.TemplateResponse(
         request,
         "list.html",
         {
-            "title": "热门推荐",
+            "title": POST_SORT_TITLES[sort_key],
             "posts": rows,
             "grid": False,
             "pagination": pagination,
+            "sort_control": sort_control_data,
         },
     )
 
@@ -752,8 +774,7 @@ def meme_index(request: Request):
 def memes_all(request: Request, page: int = 1):
     where, params = filters.category_where("memes")
     total = store.count_posts(where, params)
-    options = [("hot", "热门"), ("latest", "最新"), ("earliest", "最早")]
-    sort_control_data = sort_control(request, options, "hot")
+    sort_control_data = post_sort_control(request)
     sort_key = sort_control_data["current"]
     pagination = pagination_context(request, total, page, PAGE_SIZE, sort_key)
     rows = store.query_posts(
@@ -782,8 +803,7 @@ def meme_detail(request: Request, slug: str, page: int = 1):
     if not meme:
         raise HTTPException(status_code=404, detail="罪名专题不存在")
     total = store.count_meme_posts(slug)
-    options = [("earliest", "时间线"), ("latest", "最新"), ("hot", "热门")]
-    sort_control_data = sort_control(request, options, "earliest")
+    sort_control_data = post_sort_control(request)
     sort_key = sort_control_data["current"]
     pagination = pagination_context(request, total, page, PAGE_SIZE, sort_key)
     posts = store.query_meme_posts(
@@ -805,8 +825,7 @@ def meme_detail(request: Request, slug: str, page: int = 1):
 def interaction_page(request: Request, page: int, category: str, title: str):
     where, params = filters.category_where(category)
     total = store.count_posts(where, params)
-    options = [("latest", "最新"), ("hot", "热门")]
-    sort_control_data = sort_control(request, options, "latest")
+    sort_control_data = post_sort_control(request)
     sort_key = sort_control_data["current"]
     pagination = pagination_context(request, total, page, PAGE_SIZE, sort_key)
     rows = store.query_posts(
@@ -854,8 +873,7 @@ def interaction_mengqian_cp(request: Request, page: int = 1):
 def photos(request: Request, page: int = 1):
     where, params = filters.category_where("photos")
     total = store.count_posts(where, params)
-    options = [("hot", "热门"), ("latest", "最新"), ("likes", "最多点赞")]
-    sort_control_data = sort_control(request, options, "hot")
+    sort_control_data = post_sort_control(request)
     sort_key = sort_control_data["current"]
     pagination = pagination_context(request, total, page, PHOTO_PAGE_SIZE, sort_key)
     rows = store.query_posts(
