@@ -81,6 +81,16 @@ class MemeSeedTest(unittest.TestCase):
             seed["pangshou-erxiangxing"]["boundary"],
         )
 
+    def test_fan_fiction_categories_are_registered(self) -> None:
+        seed = {item["slug"]: item for item in memes.load_seed()}
+
+        self.assertEqual(seed["pangzhuazhua"]["kind"], "fan_fiction")
+        self.assertEqual(seed["cunzhang"]["kind"], "fan_fiction")
+        self.assertIn("胖爪爪文学", seed["pangzhuazhua"]["auto_publish_terms"])
+        self.assertIn("钱田村", seed["cunzhang"]["auto_publish_terms"])
+        self.assertIn("不表示钱钱真实担任村长", seed["cunzhang"]["boundary"])
+        self.assertEqual(seed["chishi"].get("kind", "behavior"), "behavior")
+
 
 class CuratedSyncTest(unittest.TestCase):
     def setUp(self) -> None:
@@ -130,6 +140,8 @@ curated_post_ids = [{ids}]
         rows = store.query_meme_posts("curated")
 
         self.assertEqual(summary[0]["matched_posts"], 2)
+        self.assertEqual(summary[0]["kind"], "behavior")
+        self.assertEqual(store.get_meme("curated")["kind"], "behavior")
         self.assertEqual({row["id"] for row in rows}, {"1", "2"})
         self.assertEqual({row["matched_by"] for row in rows}, {"curated"})
 

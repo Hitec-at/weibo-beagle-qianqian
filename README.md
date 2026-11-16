@@ -11,6 +11,7 @@
 - [热门](https://wb-bgqq.fly.dev/)：最近大家都在看
 - [N宗罪](https://wb-bgqq.fly.dev/memes)：钱钱犯过的那些事
 - [互动](https://wb-bgqq.fly.dev/interactions)：和比格犬受害者联盟的来往
+- [二创](https://wb-bgqq.fly.dev/fan-memes)：粉丝围绕钱钱形象创作的虚拟梗
 - [高清图](https://wb-bgqq.fly.dev/photos)：值得收藏的钱钱照片
 
 ## 正事进度

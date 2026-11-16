@@ -77,7 +77,8 @@ def cmd_fetch(args) -> int:
             print(
                 "已整理新入库微博："
                 f"{result['processed']} 条（热门 {result['hot']}、N宗罪 {result['memes']}、"
-                f"互动 {result['interactions']}、萌钱CP {result['interaction_mengqian_cp']}、"
+                f"二创 {result['fan_memes']}、互动 {result['interactions']}、"
+                f"萌钱CP {result['interaction_mengqian_cp']}、"
                 f"实体别名 {result['qianqian_aliases']}、高清图 {result['photos']}）。"
             )
         except Exception as exc:
@@ -126,7 +127,7 @@ def cmd_memes_import(args) -> int:
     import classify
 
     result = classify.run(all_posts=True)
-    print(f"已按新N宗罪条目重新整理 {result['processed']} 条微博。")
+    print(f"已按最新分类条目重新整理 {result['processed']} 条微博。")
     return 0
 
 
@@ -140,7 +141,7 @@ def cmd_meme_list(args) -> int:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
     if not rows:
-        print("暂无N宗罪条目，请运行 wbq.py memes-import 导入种子。", file=sys.stderr)
+        print("暂无分类条目，请运行 wbq.py memes-import 导入种子。", file=sys.stderr)
         return 0
     for row in rows:
         print(f"{row['slug']:<16} {row['name']:<10} 关联 {row['post_count']:>4} 条  {row['explanation'][:40]}")
@@ -151,7 +152,7 @@ def cmd_meme(args) -> int:
     store.init_db()
     meme = store.get_meme(args.slug)
     if not meme:
-        print(f"未找到N宗罪条目：{args.slug}", file=sys.stderr)
+        print(f"未找到分类条目：{args.slug}", file=sys.stderr)
         return 1
     if not args.json:
         print(f"【{meme['name']}】{meme['explanation']}", file=sys.stderr)
@@ -396,7 +397,8 @@ def cmd_classify(args) -> int:
     result = classify.run(day=args.day, all_posts=args.all)
     print(
         f"已整理 {result['processed']} 条：热门 {result['hot']}、N宗罪 {result['memes']}、"
-        f"互动 {result['interactions']}、萌钱CP {result['interaction_mengqian_cp']}、"
+        f"二创 {result['fan_memes']}、互动 {result['interactions']}、"
+        f"萌钱CP {result['interaction_mengqian_cp']}、"
         f"实体别名 {result['qianqian_aliases']}、高清图 {result['photos']}。"
     )
     return 0

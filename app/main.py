@@ -759,13 +759,32 @@ def home(request: Request, page: int = 1):
 
 @app.get("/memes")
 def meme_index(request: Request):
-    rows = store.list_memes()
+    rows = store.list_memes(kind="behavior")
     return templates.TemplateResponse(
         request,
         "meme_index.html",
         {
             "title": "N宗罪",
             "memes": rows,
+            "section_label": "N宗罪",
+            "all_path": "/memes/all",
+            "all_label": "全部罪证",
+        },
+    )
+
+
+@app.get("/fan-memes")
+def fan_meme_index(request: Request):
+    rows = store.list_memes(kind="fan_fiction")
+    return templates.TemplateResponse(
+        request,
+        "meme_index.html",
+        {
+            "title": "粉丝二创",
+            "memes": rows,
+            "section_label": "粉丝二创",
+            "all_path": "/fan-memes/all",
+            "all_label": "全部二创",
         },
     )
 
@@ -793,6 +812,34 @@ def memes_all(request: Request, page: int = 1):
     )
 
 
+@app.get("/fan-memes/all")
+def fan_memes_all(request: Request, page: int = 1):
+    where, params = filters.category_where("fan_memes")
+    total = store.count_posts(where, params)
+    options = [("hot", "热门"), ("latest", "最新"), ("earliest", "最早")]
+    sort_control_data = sort_control(request, options, "hot")
+    sort_key = sort_control_data["current"]
+    pagination = pagination_context(request, total, page, PAGE_SIZE, sort_key)
+    rows = store.query_posts(
+        where,
+        params,
+        limit=PAGE_SIZE,
+        order=sort_key,
+        offset=(pagination["page"] - 1) * PAGE_SIZE,
+    )
+    return templates.TemplateResponse(
+        request,
+        "list.html",
+        {
+            "title": "全部二创",
+            "posts": rows,
+            "grid": False,
+            "pagination": pagination,
+            "sort_control": sort_control_data,
+        },
+    )
+
+
 @app.get("/meme/{slug}")
 def meme_detail(request: Request, slug: str, page: int = 1):
     canonical = memes.canonical_slug(slug)
@@ -801,7 +848,7 @@ def meme_detail(request: Request, slug: str, page: int = 1):
         return RedirectResponse(f"/meme/{canonical}{query}", status_code=308)
     meme = store.get_meme(slug)
     if not meme:
-        raise HTTPException(status_code=404, detail="罪名专题不存在")
+        raise HTTPException(status_code=404, detail="分类条目不存在")
     total = store.count_meme_posts(slug)
     sort_control_data = post_sort_control(request)
     sort_key = sort_control_data["current"]
@@ -815,6 +862,12 @@ def meme_detail(request: Request, slug: str, page: int = 1):
         {
             "title": meme["name"],
             "meme": meme,
+            "section_label": (
+                "粉丝二创" if meme.get("kind") == "fan_fiction" else "N宗罪"
+            ),
+            "back_path": (
+                "/fan-memes" if meme.get("kind") == "fan_fiction" else "/memes"
+            ),
             "posts": posts,
             "pagination": pagination,
             "sort_control": sort_control_data,

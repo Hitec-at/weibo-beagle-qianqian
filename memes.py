@@ -16,6 +16,7 @@ import store
 BASE_DIR = Path(__file__).resolve().parent
 SEED_PATH = BASE_DIR / "memes.seed.toml"
 LEGACY_SLUGS = {"fanguoji": "fanlaji"}
+ENTRY_KINDS = {"behavior", "fan_fiction"}
 
 
 def canonical_slug(slug: str) -> str:
@@ -61,6 +62,11 @@ def sync(seed_path: Path | str = SEED_PATH) -> list[dict]:
         if not name:
             raise ValueError(f"第 {order + 1} 条梗条目缺少 name")
         slug = str(item.get("slug") or name).strip()
+        kind = str(item.get("kind") or "behavior").strip()
+        if kind not in ENTRY_KINDS:
+            raise ValueError(
+                f"「{name}」的 kind 必须是 behavior 或 fan_fiction"
+            )
         user_aliases = _unique(item.get("aliases") or [])
         excludes = _unique(item.get("exclude") or [])
         search_queries = _unique(item.get("search_queries") or [])
@@ -103,6 +109,7 @@ def sync(seed_path: Path | str = SEED_PATH) -> list[dict]:
             {
                 "slug": slug,
                 "name": name,
+                "kind": kind,
                 "aliases_json": json.dumps(user_aliases, ensure_ascii=False),
                 "origin": str(item.get("origin") or "").strip(),
                 "explanation": str(item.get("explanation") or "").strip(),
@@ -145,6 +152,7 @@ def sync(seed_path: Path | str = SEED_PATH) -> list[dict]:
             {
                 "slug": slug,
                 "name": name,
+                "kind": kind,
                 "match_mode": match_mode,
                 "matched_posts": len(matched_ids),
                 "term_counts": term_counts,

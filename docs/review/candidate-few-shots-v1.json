@@ -81,6 +81,27 @@
       "confidence": 0.9,
       "reason": "晒钱钱收到的快递；按项目语境通常由网友寄送。",
       "evidence": ["post.text 含“钱钱的快递”"]
+    },
+    {
+      "post_id": "5183904453757661",
+      "meme_slug": "pangzhuazhua",
+      "post_text": "不懂胖爪爪文学和狗官文学的没福了[泪]",
+      "decision": "accept",
+      "confidence": 0.95,
+      "reason": "正文明确使用“胖爪爪文学”，属于粉丝对爪子胖的拟人化二创。",
+      "evidence": ["post.text 含“胖爪爪文学”"]
+    },
+    {
+      "post_id": "5133652641975440",
+      "meme_slug": "cunzhang",
+      "post_text": "又掏垃圾桶了",
+      "decision": "accept",
+      "confidence": 0.94,
+      "reason": "正文对应村庄治理素材，评论明确称其为“钱田村好村长”。",
+      "evidence": [
+        "comment 5133654949101766：钱田村好村长",
+        "二创叙事是观众解释，不等于现实身份"
+      ]
     }
   ]
 }
