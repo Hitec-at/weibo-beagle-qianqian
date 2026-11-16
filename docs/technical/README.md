@@ -15,6 +15,7 @@
 - [候选审核准则 v1](../review/candidate-review-v1.md)
 - [候选审核 few-shot v1](../review/candidate-few-shots-v1.json)
 - [规则变更独立审计 v1](../review/rule-change-audit-v1.md)
+- [每日数据运营指标口径 v1](../metrics/daily-ops-metrics-v1.md)
 - [N宗罪 baseline v1 审核](baseline-reviews/2026-11-11-v1.md)
 - [N宗罪 baseline v2 审核](baseline-reviews/2026-11-11-v2.md)
 - [N宗罪 baseline v3 首批人工审核](baseline-reviews/2026-11-12-v3.md)
