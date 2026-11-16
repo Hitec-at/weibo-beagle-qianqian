@@ -1,5 +1,5 @@
-# N宗罪条目种子清单（人工维护）
-# 每个条目可以是一个梗，也可以是一类反复出现的行为/罪名。
+# 内容分类种子清单（人工维护）
+# kind = "behavior" 表示真实行为或现实主题；kind = "fan_fiction" 表示粉丝二创虚拟梗。
 # 新增条目：复制一段 [[memes]]，填 name / aliases / behavior_tags /
 # exclude / search_queries 等字段后执行
 #   .venv/bin/python wbq.py memes-import
@@ -130,3 +130,43 @@ explanation = "钱钱对垃圾桶和地面食物有执念，常趁人不注意�
 behavior_tags = ["翻垃圾桶", "掏垃圾桶", "捡食"]
 boundary = "必须体现翻找、掏取垃圾桶，或吃垃圾桶及地面上的食物；单纯提到收垃圾、卖纸箱、垃圾桶镜头不算"
 representative_url = ""
+
+[[memes]]
+slug = "pangzhuazhua"
+name = "胖爪爪"
+kind = "fan_fiction"
+match_mode = "mixed"
+aliases = ["胖爪爪文学", "胖爪爪"]
+auto_publish_terms = ["胖爪爪文学", "胖爪爪"]
+candidate_terms = ["爪子胖"]
+search_queries = ["胖爪爪", "胖爪爪文学"]
+curated_post_ids = [
+    "5183904453757661", "5130358297725689", "5114096525775027",
+    "5202506506571089"
+]
+exclude = []
+origin = "粉丝调侃钱钱的爪子胖，并结合拟人化形象编排故事"
+explanation = "粉丝围绕钱钱胖乎乎的爪子创作拟人化故事，例如握手机打字不方便、急得掉眼泪"
+behavior_tags = ["粉丝二创", "拟人化", "胖爪爪"]
+boundary = "必须明确使用“胖爪爪”或相关二创叙事；普通提到爪子、胖或手机不算，也不能当作钱钱真实发生过对应故事"
+representative_url = "https://weibo.com/3866429224/5183904453757661"
+
+[[memes]]
+slug = "cunzhang"
+name = "村长"
+kind = "fan_fiction"
+match_mode = "mixed"
+aliases = ["钱田村", "村长"]
+auto_publish_terms = ["钱田村", "给村长上贡", "村长开的店", "村干部"]
+candidate_terms = ["村长", "上贡"]
+search_queries = ["村长", "钱田村", "给村长上贡"]
+curated_post_ids = [
+    "5133652641975440", "5115446806188047", "5127814120475356",
+    "5307141714087299", "5142734563447600"
+]
+exclude = ["村委会", "村长选举"]
+origin = "粉丝把钱钱和主人的村庄称为“钱田村”，把钱钱想象成一村之长"
+explanation = "粉丝围绕钱田村、村长治理、垃圾分类、网友上贡和收礼形成滑稽的拟人化叙事"
+behavior_tags = ["粉丝二创", "钱田村", "村长", "上贡"]
+boundary = "必须围绕钱田村、村长治理、上贡或相应二创叙事；这是粉丝虚构故事，不表示钱钱真实担任村长或真实受贿；普通行政村庄和选举新闻不算"
+representative_url = "https://weibo.com/3866429224/5133652641975440"

@@ -47,6 +47,8 @@ Actions 会自动请求以下地址：
 - `/`
 - `/memes`
 - `/memes/all`
+- `/fan-memes`
+- `/fan-memes/all`
 - `/interactions`
 - `/photos`
 - `/search?q=垃圾桶`

@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS comment_threads (
 CREATE TABLE IF NOT EXISTS memes (
     slug TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'behavior',
     aliases_json TEXT NOT NULL DEFAULT '[]',
     origin TEXT NOT NULL DEFAULT '',
     explanation TEXT NOT NULL DEFAULT '',
@@ -223,6 +224,10 @@ def init_db() -> None:
         if "search_queries_json" not in columns:
             conn.execute(
                 "ALTER TABLE memes ADD COLUMN search_queries_json TEXT NOT NULL DEFAULT '[]'"
+            )
+        if "kind" not in columns:
+            conn.execute(
+                "ALTER TABLE memes ADD COLUMN kind TEXT NOT NULL DEFAULT 'behavior'"
             )
         comment_columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(comments)")
@@ -643,16 +648,17 @@ def upsert_meme(m: dict) -> None:
         conn.execute(
             """
             INSERT INTO memes (
-                slug, name, aliases_json, origin, explanation,
+                slug, name, kind, aliases_json, origin, explanation,
                 behavior_tags_json, exclude_json, search_queries_json, boundary, representative_url,
                 representative_post_id, sort_order, updated_at
             ) VALUES (
-                :slug, :name, :aliases_json, :origin, :explanation,
+                :slug, :name, :kind, :aliases_json, :origin, :explanation,
                 :behavior_tags_json, :exclude_json, :search_queries_json, :boundary, :representative_url,
                 :representative_post_id, :sort_order, :updated_at
             )
             ON CONFLICT(slug) DO UPDATE SET
                 name = excluded.name,
+                kind = excluded.kind,
                 aliases_json = excluded.aliases_json,
                 origin = excluded.origin,
                 explanation = excluded.explanation,
@@ -672,18 +678,23 @@ def upsert_meme(m: dict) -> None:
         conn.close()
 
 
-def list_memes() -> list[dict]:
+def list_memes(kind: str | None = None) -> list[dict]:
     conn = connect()
     try:
-        rows = conn.execute(
-            """
+        sql = """
             SELECT m.*, COUNT(pm.post_id) AS post_count
             FROM memes m
             LEFT JOIN post_memes pm ON pm.meme_slug = m.slug
+        """
+        params: tuple[str, ...] = ()
+        if kind is not None:
+            sql += " WHERE m.kind = ?"
+            params = (kind,)
+        sql += """
             GROUP BY m.slug
             ORDER BY m.sort_order, m.name
-            """
-        ).fetchall()
+        """
+        rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()

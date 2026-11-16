@@ -10,6 +10,7 @@ CST = timezone(timedelta(hours=8))
 CATEGORIES = (
     "hot",
     "memes",
+    "fan_memes",
     "interactions",
     "photos",
     "qianqian_aliases",
@@ -68,13 +69,22 @@ def classify_post(post: dict) -> list[str]:
         if matched_by == "curated" or category not in matched_by_category:
             matched_by_category[category] = matched_by
 
-    meme_terms = filters.meme_hits(text)
+    behavior_meme_terms = filters.meme_hits(text)
+    fan_meme_terms: list[str] = []
     for link in store.get_post_meme_links(post["id"]):
-        term = link.get("matched_term") or ""
-        if term and term not in meme_terms:
-            meme_terms.append(term)
-    if meme_terms:
-        add_category("memes", "、".join(meme_terms))
+        term = link.get("matched_term") or link.get("meme_slug") or ""
+        meme = store.get_meme(link.get("meme_slug") or "") or {}
+        target = (
+            fan_meme_terms
+            if meme.get("kind") == "fan_fiction"
+            else behavior_meme_terms
+        )
+        if term and term not in target:
+            target.append(term)
+    if behavior_meme_terms:
+        add_category("memes", "、".join(behavior_meme_terms))
+    if fan_meme_terms:
+        add_category("fan_memes", "、".join(fan_meme_terms))
 
     interact_terms = filters.interact_hits(text, post.get("retweeted_user") or "")
     if interact_terms:

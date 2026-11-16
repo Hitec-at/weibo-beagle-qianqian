@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}N宗罪 · 比格钱钱 微博检索{% endblock %}
+{% block title %}{{ title }} · 比格钱钱 微博检索{% endblock %}
 {% block content %}
 <section class="page">
   <h1>{{ title }}</h1>
@@ -12,6 +12,6 @@
   {% else %}
   <p class="empty">暂无内容。</p>
   {% endif %}
-  <p class="backlink"><a href="/memes/all">全部罪证 →</a></p>
+  <p class="backlink"><a href="{{ all_path }}">{{ all_label }} →</a></p>
 </section>
 {% endblock %}

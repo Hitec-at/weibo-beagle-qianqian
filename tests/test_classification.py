@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 import classify
+import memes
 import store
 
 
@@ -106,6 +107,53 @@ class ClassificationTest(unittest.TestCase):
             "memes",
             classify.classify_post(self._post("21", "垃圾桶放在地上")),
         )
+
+    def test_fan_fiction_links_use_separate_category(self) -> None:
+        conn = store.connect()
+        try:
+            conn.execute(
+                "INSERT INTO posts (id, text_plain) VALUES (?, ?)",
+                ("30", "今天用胖爪爪打字"),
+            )
+            conn.execute(
+                "INSERT INTO posts (id, text_plain) VALUES (?, ?)",
+                ("31", "今天又偷吃了"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        seed = Path(self.temp_dir.name) / "fan-memes.toml"
+        seed.write_text(
+            """
+[[memes]]
+slug = "pangzhuazhua"
+name = "胖爪爪"
+kind = "fan_fiction"
+match_mode = "mixed"
+auto_publish_terms = ["胖爪爪"]
+
+[[memes]]
+slug = "touchi-test"
+name = "偷吃测试"
+kind = "behavior"
+match_mode = "rule"
+aliases = ["偷吃"]
+""",
+            encoding="utf-8",
+        )
+        memes.sync(seed)
+
+        fan_categories = classify.classify_post(
+            self._post("30", "今天用胖爪爪打字")
+        )
+        behavior_categories = classify.classify_post(
+            self._post("31", "今天又偷吃了")
+        )
+
+        self.assertIn("fan_memes", fan_categories)
+        self.assertNotIn("memes", fan_categories)
+        self.assertIn("memes", behavior_categories)
+        self.assertNotIn("fan_memes", behavior_categories)
 
 
 if __name__ == "__main__":

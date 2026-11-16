@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% from "_video_player.html" import video_player %}
-{% block title %}{{ meme.name }} · 比格钱钱 N宗罪{% endblock %}
+{% block title %}{{ meme.name }} · 比格钱钱 {{ section_label }}{% endblock %}
 {% block content %}
 <section class="page">
-  <p class="crumb"><a href="/memes">← N宗罪</a></p>
+  <p class="crumb"><a href="{{ back_path }}">← {{ section_label }}</a></p>
   <h1>{{ meme.name }}</h1>
   {% include "_sort.html" %}
   {% if posts %}

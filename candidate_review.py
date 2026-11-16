@@ -39,6 +39,7 @@ def _meme_context(slug: str) -> dict:
     return {
         "slug": slug,
         "name": meme.get("name") or slug,
+        "kind": meme.get("kind") or "behavior",
         "origin": meme.get("origin") or "",
         "explanation": meme.get("explanation") or "",
         "boundary": meme.get("boundary") or "",
