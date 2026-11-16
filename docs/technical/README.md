@@ -17,6 +17,7 @@
 - [N宗罪 baseline v1 审核](baseline-reviews/2026-11-11-v1.md)
 - [N宗罪 baseline v2 审核](baseline-reviews/2026-11-11-v2.md)
 - [N宗罪 baseline v3 首批人工审核](baseline-reviews/2026-11-12-v3.md)
+- [钱田村治理与上贡](../semantics/qiantian-village-governance.md)
 
 ## 发布
 
