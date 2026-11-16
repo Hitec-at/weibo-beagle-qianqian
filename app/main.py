@@ -459,12 +459,18 @@ def _fetch_guest_video(node: dict) -> dict | None:
     }
 
 
-def _refresh_guest_video(node: dict, key: str) -> dict | None:
+def _refresh_guest_video(
+    node: dict, key: str, *, ignore_cooldown: bool = False
+) -> dict | None:
     if not config.ENABLE_GUEST_VIDEO_REFRESH:
         return None
     now = time.time()
     failed_at = _VIDEO_FAILURES.get(key, 0)
-    if failed_at and now < failed_at + config.VIDEO_REFRESH_COOLDOWN_SECONDS:
+    if (
+        not ignore_cooldown
+        and failed_at
+        and now < failed_at + config.VIDEO_REFRESH_COOLDOWN_SECONDS
+    ):
         return None
     fresh = _fetch_guest_video(node)
     if not fresh:
@@ -498,7 +504,9 @@ def _refresh_video(p: dict, source: bool, key: str) -> dict | None:
     return _cache_video(key, url, meta.get("poster") or "")
 
 
-def resolve_video(p: dict, source: bool) -> dict | None:
+def resolve_video(
+    p: dict, source: bool, *, force_guest_refresh: bool = False
+) -> dict | None:
     key = f"{p['id']}:{'rt' if source else 'self'}"
     now = int(time.time())
     refresh_before = max(60, config.VIDEO_CACHE_REFRESH_SECONDS)
@@ -516,10 +524,13 @@ def resolve_video(p: dict, source: bool) -> dict | None:
         else None
     )
     with _video_lock(key):
+        now = int(time.time())
         cached = store.get_video_cache(key)
         if cached and int(cached["expires_at"]) > now + refresh_before:
             return cached
-        fresh = _refresh_guest_video(node, key)
+        fresh = _refresh_guest_video(
+            node, key, ignore_cooldown=force_guest_refresh
+        )
         if fresh:
             return fresh
         fresh = _refresh_video(p, source, key)
@@ -679,8 +690,10 @@ def video(pid: str, request: Request, source: int = 0):
             pass
         return None
 
-    def open_upstream():
-        info = resolve_video(p, is_source)
+    def open_upstream(*, force_guest_refresh: bool = False):
+        info = resolve_video(
+            p, is_source, force_guest_refresh=force_guest_refresh
+        )
         if not info:
             return None
         upstream = request_video(info["url"])
@@ -695,7 +708,16 @@ def video(pid: str, request: Request, source: int = 0):
     upstream = open_upstream()
     if upstream is None:
         store.invalidate_video_cache(key)
-        upstream = open_upstream()
+        # A transient guest-endpoint failure may have put the video into a
+        # cooldown while there is no playable URL to fall back to. Retry the
+        # guest refresh once inside this request, but never retry indefinitely.
+        opening_retry = bool(
+            config.ENABLE_GUEST_VIDEO_REFRESH
+            and _video_oid(_video_node(p, is_source))
+        )
+        if opening_retry:
+            time.sleep(0.25)
+        upstream = open_upstream(force_guest_refresh=opening_retry)
         if upstream is None:
             raise HTTPException(status_code=502, detail="视频暂不可用")
     out_headers = {}
