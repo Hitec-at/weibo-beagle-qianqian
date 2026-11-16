@@ -69,11 +69,13 @@ def classify_post(post: dict) -> list[str]:
         if matched_by == "curated" or category not in matched_by_category:
             matched_by_category[category] = matched_by
 
-    behavior_meme_terms = filters.meme_hits(text)
+    behavior_meme_terms: list[str] = []
     fan_meme_terms: list[str] = []
     for link in store.get_post_meme_links(post["id"]):
         term = link.get("matched_term") or link.get("meme_slug") or ""
         meme = store.get_meme(link.get("meme_slug") or "") or {}
+        if meme.get("status", "active") != "active":
+            continue
         target = (
             fan_meme_terms
             if meme.get("kind") == "fan_fiction"

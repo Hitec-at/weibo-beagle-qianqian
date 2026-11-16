@@ -93,12 +93,66 @@ class ClassificationTest(unittest.TestCase):
             "全是钱钱的快递",
             "您的快递📦正在打包",
         )
+        conn = store.connect()
+        try:
+            conn.executemany(
+                "INSERT INTO posts (id, text_plain) VALUES (?, ?)",
+                [(str(index), text) for index, text in enumerate(cases, start=10)],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        seed = Path(self.temp_dir.name) / "high-precision.toml"
+        seed.write_text(
+            f"""
+[[memes]]
+slug = "high-precision"
+name = "高精度测试"
+match_mode = "mixed"
+auto_publish_terms = [{", ".join(repr(text) for text in cases)}]
+candidate_terms = []
+search_queries = ["测试"]
+exclude = ["排除"]
+origin = "测试"
+explanation = "测试"
+boundary = "测试"
+""",
+            encoding="utf-8",
+        )
+        memes.sync(seed)
         for index, text in enumerate(cases, start=10):
             with self.subTest(text=text):
                 categories = classify.classify_post(self._post(str(index), text))
                 self.assertIn("memes", categories)
 
     def test_generic_diaper_and_bin_words_remain_reviewable(self) -> None:
+        conn = store.connect()
+        try:
+            conn.executemany(
+                "INSERT INTO posts (id, text_plain) VALUES (?, ?)",
+                [("20", "纸尿裤放在桌上"), ("21", "垃圾桶放在地上")],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        seed = Path(self.temp_dir.name) / "generic.toml"
+        seed.write_text(
+            """
+[[memes]]
+slug = "bin-test"
+name = "垃圾桶测试"
+match_mode = "mixed"
+auto_publish_terms = ["垃圾桶"]
+candidate_terms = ["纸尿裤"]
+search_queries = ["垃圾桶"]
+exclude = ["排除"]
+origin = "测试"
+explanation = "测试"
+boundary = "测试"
+""",
+            encoding="utf-8",
+        )
+        memes.sync(seed)
         self.assertNotIn(
             "memes",
             classify.classify_post(self._post("20", "纸尿裤放在桌上")),

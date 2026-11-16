@@ -870,7 +870,7 @@ def meme_detail(request: Request, slug: str, page: int = 1):
         query = f"?{request.url.query}" if request.url.query else ""
         return RedirectResponse(f"/meme/{canonical}{query}", status_code=308)
     meme = store.get_meme(slug)
-    if not meme:
+    if not meme or meme.get("status", "active") != "active":
         raise HTTPException(status_code=404, detail="分类条目不存在")
     total = store.count_meme_posts(slug)
     sort_control_data = post_sort_control(request)

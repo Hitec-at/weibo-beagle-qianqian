@@ -108,10 +108,11 @@ def cmd_memes_import(args) -> int:
     import memes
 
     try:
-        summary = memes.sync(args.seed) if args.seed else memes.sync()
+        report = memes.sync_with_report(args.seed) if args.seed else memes.sync_with_report()
     except (OSError, ValueError) as exc:
         print(f"[导入失败] {exc}", file=sys.stderr)
         return 1
+    summary = report["items"]
     for item in summary:
         terms = "、".join(item["term_counts"]) or "无"
         if item["match_mode"] == "curated":
@@ -124,11 +125,41 @@ def cmd_memes_import(args) -> int:
             f"{item['name']}（{item['slug']}）：命中 {item['matched_posts']} 条；"
             f"依据 {basis}；代表微博{'已关联' if item['representative_found'] else '尚未入库'}"
         )
+    if report["deprecated_missing"]:
+        names = "、".join(
+            f"{item['name']}（{item['slug']}）"
+            for item in report["deprecated_missing"]
+        )
+        print(f"已停用未出现在种子中的条目：{names}")
+    if report["preflight"]["warning_count"]:
+        print(f"规则预检有 {report['preflight']['warning_count']} 个警告，可继续导入。")
     import classify
 
     result = classify.run(all_posts=True)
     print(f"已按最新分类条目重新整理 {result['processed']} 条微博。")
     return 0
+
+
+def cmd_memes_preflight(args) -> int:
+    import memes
+
+    try:
+        result = memes.preflight(args.seed) if args.seed else memes.preflight()
+    except (OSError, ValueError) as exc:
+        print(f"[预检失败] {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        for item in result["errors"]:
+            print(f"错误 [{item['slug']}] {item['code']}: {item['message']}", file=sys.stderr)
+        for item in result["warnings"]:
+            print(f"警告 [{item['slug']}] {item['code']}: {item['message']}")
+        print(
+            f"预检完成：{result['entries']} 个条目，"
+            f"{result['error_count']} 个错误，{result['warning_count']} 个警告。"
+        )
+    return 0 if result["ok"] else 1
 
 
 def cmd_meme_list(args) -> int:
@@ -151,7 +182,7 @@ def cmd_meme_list(args) -> int:
 def cmd_meme(args) -> int:
     store.init_db()
     meme = store.get_meme(args.slug)
-    if not meme:
+    if not meme or meme.get("status", "active") != "active":
         print(f"未找到分类条目：{args.slug}", file=sys.stderr)
         return 1
     if not args.json:
@@ -507,6 +538,10 @@ def build_parser() -> argparse.ArgumentParser:
     mi = sub.add_parser("memes-import", help="导入N宗罪条目种子并重建规则关联")
     mi.add_argument("--seed", default=None, help="种子文件路径，默认 memes.seed.toml")
 
+    mp = sub.add_parser("memes-preflight", help="只读检查规则包完整性和生命周期")
+    mp.add_argument("--seed", default=None, help="种子文件路径，默认 memes.seed.toml")
+    mp.add_argument("--json", action="store_true")
+
     ml = sub.add_parser("memes", help="列出N宗罪专题")
     ml.add_argument("--json", action="store_true")
 
@@ -542,6 +577,7 @@ def main(argv=None) -> int:
         "memes": cmd_meme_list,
         "memes-raw": cmd_memes_raw,
         "memes-import": cmd_memes_import,
+        "memes-preflight": cmd_memes_preflight,
         "meme": cmd_meme,
         "interactions": cmd_interactions,
         "comments": cmd_comments,

@@ -66,6 +66,7 @@ $PYBIN wbq.py request-status
 N宗罪条目存放在 `memes.seed.toml`。每个条目可以是一项热梗，也可以是一类行为主题。新增条目：复制一段 `[[memes]]`，填写 `name`、`aliases`、`behavior_tags`、`exclude`、`search_queries` 等字段，然后执行：
 
 ```bash
+$PYBIN wbq.py memes-preflight              # 只读检查定义、正反例、术语冲突和帖子引用
 $PYBIN wbq.py memes-import                       # 导入种子并按触发词重建关联
 $PYBIN wbq.py baseline build --version baseline-v1
                                                   # 只用本地库构建并冻结 baseline
@@ -79,6 +80,11 @@ $PYBIN wbq.py baseline report --version baseline-v1
 $PYBIN wbq.py baseline review --version baseline-v2 --output dist/baseline-v2-review
                                                   # 导出 JSON/CSV/Markdown 人工审核清单
 ```
+
+`status` 默认是 `active`。设为 `paused` 或 `deprecated` 后，条目保留历史和
+审核记录，但不再参与页面、搜索 probe、baseline 或候选审核。从种子中删除的
+条目会自动标为 `deprecated`，不会物理删除。预检返回错误时先修正；只有警告时
+可以继续导入，但宽泛或证据不足的规则应只作为候选。
 
 `slug` 用于专题页 URL（`/meme/<slug>`）；不填时默认使用 `name`。代表微博的 `representative_url` 尚未入库时会显示“尚未入库”，抓取到对应 mid 后重新导入即可自动关联。
 

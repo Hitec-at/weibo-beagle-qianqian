@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS memes (
     slug TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     kind TEXT NOT NULL DEFAULT 'behavior',
+    status TEXT NOT NULL DEFAULT 'active',
     aliases_json TEXT NOT NULL DEFAULT '[]',
     origin TEXT NOT NULL DEFAULT '',
     explanation TEXT NOT NULL DEFAULT '',
@@ -228,6 +229,10 @@ def init_db() -> None:
         if "kind" not in columns:
             conn.execute(
                 "ALTER TABLE memes ADD COLUMN kind TEXT NOT NULL DEFAULT 'behavior'"
+            )
+        if "status" not in columns:
+            conn.execute(
+                "ALTER TABLE memes ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"
             )
         comment_columns = {
             row["name"] for row in conn.execute("PRAGMA table_info(comments)")
@@ -664,17 +669,18 @@ def upsert_meme(m: dict) -> None:
         conn.execute(
             """
             INSERT INTO memes (
-                slug, name, kind, aliases_json, origin, explanation,
+                slug, name, kind, status, aliases_json, origin, explanation,
                 behavior_tags_json, exclude_json, search_queries_json, boundary, representative_url,
                 representative_post_id, sort_order, updated_at
             ) VALUES (
-                :slug, :name, :kind, :aliases_json, :origin, :explanation,
+                :slug, :name, :kind, :status, :aliases_json, :origin, :explanation,
                 :behavior_tags_json, :exclude_json, :search_queries_json, :boundary, :representative_url,
                 :representative_post_id, :sort_order, :updated_at
             )
             ON CONFLICT(slug) DO UPDATE SET
                 name = excluded.name,
                 kind = excluded.kind,
+                status = excluded.status,
                 aliases_json = excluded.aliases_json,
                 origin = excluded.origin,
                 explanation = excluded.explanation,
@@ -694,7 +700,10 @@ def upsert_meme(m: dict) -> None:
         conn.close()
 
 
-def list_memes(kind: str | None = None) -> list[dict]:
+def list_memes(
+    kind: str | None = None,
+    status: str | None = "active",
+) -> list[dict]:
     conn = connect()
     try:
         sql = """
@@ -702,10 +711,16 @@ def list_memes(kind: str | None = None) -> list[dict]:
             FROM memes m
             LEFT JOIN post_memes pm ON pm.meme_slug = m.slug
         """
+        clauses: list[str] = []
         params: tuple[str, ...] = ()
         if kind is not None:
-            sql += " WHERE m.kind = ?"
-            params = (kind,)
+            clauses.append("m.kind = ?")
+            params += (kind,)
+        if status is not None:
+            clauses.append("m.status = ?")
+            params += (status,)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
         sql += """
             GROUP BY m.slug
             ORDER BY m.sort_order, m.name
@@ -721,6 +736,38 @@ def get_meme(slug: str) -> dict | None:
     try:
         row = conn.execute("SELECT * FROM memes WHERE slug = ?", (slug,)).fetchone()
         return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def deprecate_missing_memes(
+    keep_slugs: set[str],
+    updated_at: str,
+) -> list[dict]:
+    """Mark seed entries absent from the current seed as deprecated."""
+    keep = sorted(str(slug) for slug in keep_slugs if slug)
+    conn = connect()
+    try:
+        if keep:
+            placeholders = ",".join("?" for _ in keep)
+            where = (
+                f"status != 'deprecated' AND slug NOT IN ({placeholders})"
+            )
+            params: tuple = (*keep,)
+        else:
+            where = "status != 'deprecated'"
+            params = ()
+        rows = conn.execute(
+            f"SELECT slug, name, kind, status FROM memes WHERE {where}",
+            params,
+        ).fetchall()
+        if rows:
+            conn.execute(
+                f"UPDATE memes SET status = 'deprecated', updated_at = ? WHERE {where}",
+                (updated_at, *params),
+            )
+            conn.commit()
+        return [dict(row) for row in rows]
     finally:
         conn.close()
 
@@ -1108,11 +1155,13 @@ def candidate_reviews_needing_human() -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT *
-            FROM candidate_reviews
-            WHERE human_required = 1
-              AND human_decision IN ('', 'defer')
-            ORDER BY meme_slug, confidence ASC, reviewed_at, candidate_key
+            SELECT c.*
+            FROM candidate_reviews c
+            JOIN memes m ON m.slug = c.meme_slug
+            WHERE c.human_required = 1
+              AND c.human_decision IN ('', 'defer')
+              AND m.status = 'active'
+            ORDER BY c.meme_slug, c.confidence ASC, c.reviewed_at, c.candidate_key
             """
         ).fetchall()
         return [dict(row) for row in rows]

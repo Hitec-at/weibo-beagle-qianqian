@@ -69,6 +69,8 @@ def _query_pack(seed: list[dict]) -> dict[str, list[str]]:
     """按查询词合并罪名，保证同一查询只消耗一次请求。"""
     queries: dict[str, list[str]] = {}
     for item in seed:
+        if str(item.get("status") or "active").strip() != "active":
+            continue
         slug = str(item.get("slug") or item.get("name") or "").strip()
         for raw_query in item.get("search_queries") or []:
             query = str(raw_query).strip()
@@ -267,6 +269,8 @@ def _search_hits_by_slug(
 ) -> dict[str, list[tuple[str, dict]]]:
     allowed: dict[str, set[str]] = {}
     for item in seed:
+        if str(item.get("status") or "active").strip() != "active":
+            continue
         slug = str(item.get("slug") or item.get("name") or "").strip()
         allowed[slug] = {
             str(query).strip()
@@ -345,6 +349,8 @@ def build(
     }
 
     for item in seed:
+        if str(item.get("status") or "active").strip() != "active":
+            continue
         slug = str(item.get("slug") or item.get("name") or "").strip()
         name = str(item.get("name") or slug).strip()
         mode = str(item.get("match_mode") or "rule").strip()
