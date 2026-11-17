@@ -1,0 +1,48 @@
+name: Production Patrol Daily Report
+
+on:
+  schedule:
+    # GitHub Actions 使用 UTC；01:00 UTC 等于北京时间 09:00。
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-patrol-state
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate and post daily report
+        run: |
+          mkdir -p artifacts
+          python patrol.py daily --output artifacts/daily-report.md
+          python patrol.py triage --output artifacts/backlog-triage.json
+
+      - name: Upload daily artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: patrol-daily-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,52 @@
+name: Production Patrol
+
+on:
+  schedule:
+    # GitHub Actions 使用 UTC；UTC 01:00、04:00 等对应北京时间 09:00、12:00。
+    # 每 15 分钟执行一次轻量公开只读拨测。
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-patrol-state
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_REPOSITORY: ${{ github.repository }}
+      BASE_URL: https://wb-bgqq.fly.dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Probe production
+        run: |
+          mkdir -p artifacts
+          python patrol.py run \
+            --base-url "$BASE_URL" \
+            --run-id "$GITHUB_RUN_ID" \
+            --output artifacts/patrol-result.json
+
+      - name: Upload probe result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: patrol-result-${{ github.run_id }}
+          path: artifacts/patrol-result.json
+          if-no-files-found: warn
+          retention-days: 14

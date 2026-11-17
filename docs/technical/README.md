@@ -24,5 +24,6 @@
 ## 发布
 
 - [云端部署 SOP](deploy-sop.md)
+- [每日生产巡检](daily-patrol.md)
 
 产品边界、术语和优先级分别见[项目语言表](../glossary.md)、[项目决策](../decisions/README.md)和[路线图](../roadmap.md)。
