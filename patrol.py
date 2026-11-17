@@ -33,12 +33,13 @@ INCIDENT_UPDATE_INTERVAL = timedelta(hours=1)
 P95_LIMIT_MS = 2000
 CST = timezone(timedelta(hours=8))
 STATE_VERSION = 1
+STATE_RETENTION_DAYS = 3
 # 该微博是页面不暴露站内详情链接时使用的稳定真实样本。
 # 微博 ID 本身不可变；巡检不依赖 data-latest 或本地数据库。
 DEFAULT_POST_PATH = "/post/5231732026510004"
 
 PRIORITY_LABELS = {
-    "priority:P0": ("b60205", "全省不可用、数据损坏或同等严重事故"),
+    "priority:P0": ("b60205", "全站不可用、数据损坏或同等严重事故"),
     "priority:P1": ("d93f0b", "核心检索不可用"),
     "priority:P2": ("fbca04", "局部功能或数据质量下降"),
     "priority:P3": ("0e8a16", "体验优化和远期需求"),
@@ -503,11 +504,12 @@ def _aggregate_day(state: dict[str, Any], report: dict[str, Any]) -> None:
             key = str(code)
             endpoint["http_codes"][key] = endpoint["http_codes"].get(key, 0) + 1
 
-    cutoff = now_utc().astimezone(CST).date() - timedelta(days=8)
+    current_day = date.fromisoformat(day)
+    cutoff = current_day - timedelta(days=STATE_RETENTION_DAYS - 1)
     state["days"] = {
         key: value
         for key, value in state["days"].items()
-        if date.fromisoformat(key) >= cutoff
+        if cutoff <= date.fromisoformat(key) <= current_day
     }
 
 
@@ -620,9 +622,24 @@ class GhClient:
                 "view",
                 str(number),
                 "--json",
-                "number,title,state,body,url,comments",
+                "number,title,state,body,url",
             ]
         )
+
+    def issue_comments(self, number: int) -> list[dict[str, Any]]:
+        pages = self.run_json(
+            [
+                "api",
+                f"repos/{self.repository}/issues/{number}/comments",
+                "--paginate",
+                "--slurp",
+            ]
+        )
+        if not isinstance(pages, list):
+            return []
+        if pages and all(isinstance(page, list) for page in pages):
+            return [comment for page in pages for comment in page]
+        return pages
 
     def create_comment(self, number: int, body: str) -> int:
         payload = json.dumps({"body": body})
@@ -860,16 +877,13 @@ def process_events(
                 "last_issue_update_at": report["finished_at"],
             }
         elif event.action == "recover" and issue_number:
-            if existing:
-                gh.close_issue(
-                    issue_number,
-                    "巡检已连续 3 次恢复成功，按要求关闭本故障 Issue。"
-                    "同一指纹再次连续失败时会重新打开。"
-                    f"\n\n生产巡检于 `{report['finished_at']}` 确认恢复。",
-                )
-                messages.append(f"关闭已恢复故障 Issue #{issue_number}：{fingerprint}")
-            else:
-                messages.append(f"故障 Issue #{issue_number} 已不存在，转为已恢复状态")
+            gh.close_issue(
+                issue_number,
+                "巡检已连续 3 次恢复成功，按要求关闭本故障 Issue。"
+                "同一指纹再次连续失败时会重新打开。"
+                f"\n\n生产巡检于 `{report['finished_at']}` 确认恢复。",
+            )
+            messages.append(f"关闭已恢复故障 Issue #{issue_number}：{fingerprint}")
             check["issue"] = {
                 "number": issue_number,
                 "state": "closed",
@@ -910,7 +924,7 @@ def _comment_with_marker(
 
 
 def _state_comment(gh: GhClient, issue: dict[str, Any]) -> dict[str, Any] | None:
-    comments = gh.issue(int(issue["number"])).get("comments", [])
+    comments = gh.issue_comments(int(issue["number"]))
     return _comment_with_marker(comments, STATE_MARKER)
 
 
@@ -1229,7 +1243,9 @@ def _select_state_comment(
     gh: GhClient, tracking: dict[str, Any]
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     issue = gh.issue(int(tracking["number"]))
-    return issue, _comment_with_marker(issue.get("comments", []), STATE_MARKER)
+    comments = gh.issue_comments(int(tracking["number"]))
+    issue["comments"] = comments
+    return issue, _comment_with_marker(comments, STATE_MARKER)
 
 
 def post_daily_report(

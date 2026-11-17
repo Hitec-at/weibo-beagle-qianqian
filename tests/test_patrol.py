@@ -4,6 +4,7 @@ import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest import mock
 
 import patrol
 
@@ -143,6 +144,23 @@ class StateTransitionTest(unittest.TestCase):
         self.assertEqual(health["failures"], 1)
         self.assertEqual(health["http_codes"], {"200": 1, "502": 1})
 
+    def test_daily_aggregate_keeps_current_and_previous_two_days(self) -> None:
+        state = patrol.empty_state()
+        for day in ("2026-11-14", "2026-11-15", "2026-11-16", "2026-11-17"):
+            state["days"][day] = {
+                "runs": 1,
+                "abnormal_runs": 0,
+                "endpoints": {},
+            }
+        patrol.apply_checkpoint(
+            state,
+            report(day="2026-11-17"),
+        )
+        self.assertEqual(
+            sorted(state["days"]),
+            ["2026-11-15", "2026-11-16", "2026-11-17"],
+        )
+
 
 class IssueLifecycleTest(unittest.TestCase):
     def test_same_fingerprint_updates_existing_issue(self) -> None:
@@ -223,6 +241,55 @@ class IssueLifecycleTest(unittest.TestCase):
             "closed",
         )
 
+    def test_recovery_closes_state_issue_when_search_does_not_find_it(self) -> None:
+        state = patrol.empty_state()
+        check = state["checks"].setdefault(
+            "healthz:availability",
+            patrol._empty_check("healthz", "availability"),
+        )
+        check["issue"] = {"number": 104, "state": "open"}
+        healthy = report()
+        for _ in range(3):
+            events = patrol.apply_checkpoint(state, healthy)
+
+        class FakeGh:
+            def __init__(self) -> None:
+                self.closed = None
+
+            def find_incident(self, fingerprint):
+                return None
+
+            def close_issue(self, number, body):
+                self.closed = (number, body)
+
+        gh = FakeGh()
+        messages = patrol.process_events(state, healthy, events, gh)
+        self.assertEqual(gh.closed[0], 104)
+        self.assertIn("关闭已恢复故障 Issue #104", messages[0])
+        self.assertEqual(check["issue"]["state"], "closed")
+
+    def test_recovery_close_failure_does_not_mark_issue_closed(self) -> None:
+        state = patrol.empty_state()
+        check = state["checks"].setdefault(
+            "healthz:availability",
+            patrol._empty_check("healthz", "availability"),
+        )
+        check["issue"] = {"number": 105, "state": "open"}
+        healthy = report()
+        for _ in range(3):
+            events = patrol.apply_checkpoint(state, healthy)
+
+        class FakeGh:
+            def find_incident(self, fingerprint):
+                return {"number": 105, "state": "CLOSED"}
+
+            def close_issue(self, number, body):
+                raise RuntimeError("close failed")
+
+        with self.assertRaises(RuntimeError):
+            patrol.process_events(state, healthy, events, FakeGh())
+        self.assertEqual(check["issue"]["state"], "open")
+
 
 class StateCommentTest(unittest.TestCase):
     def test_state_round_trip(self) -> None:
@@ -239,6 +306,70 @@ class StateCommentTest(unittest.TestCase):
 
     def test_invalid_state_is_ignored(self) -> None:
         self.assertEqual(patrol.load_state("not json"), patrol.empty_state())
+
+    def test_three_days_of_full_endpoint_samples_stay_below_comment_limit(self) -> None:
+        state = patrol.empty_state()
+        endpoint_names = [name for name, _ in patrol.PAGE_ENDPOINTS]
+        endpoint_names.extend(
+            [
+                "post_detail",
+                "image_proxy",
+                "image_proxy_reject",
+            ]
+        )
+        for day in ("2026-11-15", "2026-11-16", "2026-11-17"):
+            state["days"][day] = {
+                "runs": 96,
+                "abnormal_runs": 0,
+                "endpoints": {
+                    name: {
+                        "display_name": name,
+                        "checks": 96,
+                        "failures": 0,
+                        "perf_alerts": 0,
+                        "p95_ms": [500.0] * 96,
+                        "http_codes": {"200": 96},
+                    }
+                    for name in endpoint_names
+                },
+            }
+        body = patrol.state_comment_body(state)
+        self.assertLess(len(body), 58_000)
+
+    def test_issue_comments_flattens_paginated_pages(self) -> None:
+        client = patrol.GhClient(repository="owner/repo", token="test")
+        pages = [
+            [{"id": 1, "body": "first"}],
+            [{"id": 2, "body": patrol.STATE_MARKER}],
+        ]
+        with mock.patch.object(client, "run_json", return_value=pages) as run_json:
+            comments = client.issue_comments(42)
+        self.assertEqual(comments, pages[0] + pages[1])
+        run_json.assert_called_once_with(
+            [
+                "api",
+                "repos/owner/repo/issues/42/comments",
+                "--paginate",
+                "--slurp",
+            ]
+        )
+
+    def test_state_comment_can_be_found_after_many_historical_comments(self) -> None:
+        comments = [
+            {"id": index, "body": f"daily report {index}"}
+            for index in range(1, 149)
+        ]
+        comments.append({"id": 149, "body": patrol.STATE_MARKER})
+
+        class FakeGh:
+            def issue_comments(self, number):
+                return comments
+
+        found = patrol._state_comment(
+            FakeGh(),
+            {"number": 1},
+        )
+        self.assertEqual(found["id"], 149)
 
 
 class TriageTest(unittest.TestCase):
@@ -285,7 +416,7 @@ class TriageTest(unittest.TestCase):
             "body": (
                 "目标：建立巡检。\n\n"
                 "## 优先级口径\n\n"
-                "- P0：全省不可用、数据损坏或同等严重事故。\n\n"
+                "- P0：全站不可用、数据损坏或同等严重事故。\n\n"
                 "## 验收\n\n- 生成日报。"
             ),
             "url": "https://example.test/95",
@@ -373,6 +504,9 @@ class TriageTest(unittest.TestCase):
 
             def issue(self, number):
                 return json.loads(json.dumps(self.issue_data))
+
+            def issue_comments(self, number):
+                return json.loads(json.dumps(self.issue_data["comments"]))
 
             def create_comment(self, number, body):
                 comment_id = self.next_id
