@@ -32,8 +32,9 @@ PERFORMANCE_THRESHOLD = 3
 INCIDENT_UPDATE_INTERVAL = timedelta(hours=1)
 P95_LIMIT_MS = 2000
 CST = timezone(timedelta(hours=8))
-STATE_VERSION = 1
+STATE_VERSION = 2
 STATE_RETENTION_DAYS = 3
+LEGACY_TRANSPORT_RUN_TIMESTAMP = "2026-11-17T09:02:58.281478+00:00"
 # 该微博是页面不暴露站内详情链接时使用的稳定真实样本。
 # 微博 ID 本身不可变；巡检不依赖 data-latest 或本地数据库。
 DEFAULT_POST_PATH = "/post/5231732026510004"
@@ -114,7 +115,13 @@ def _sample(
     capture_body: bool,
 ) -> dict[str, Any]:
     started = time.perf_counter()
-    sample: dict[str, Any] = {"cold": False, "ok": False}
+    sample: dict[str, Any] = {
+        "cold": False,
+        "ok": False,
+        "outcome": "transport_failure",
+        "failure_layer": "transport",
+        "transport_error_type": "",
+    }
     try:
         response = session.get(
             url,
@@ -135,18 +142,24 @@ def _sample(
         )
         if response.status_code not in endpoint.expected_statuses:
             sample["error"] = f"期望状态码 {endpoint.expected_statuses}，实际 {response.status_code}"
+            sample["outcome"] = "http_failure"
+            sample["failure_layer"] = "http"
         elif endpoint.content_type_prefix and not content_type.startswith(
             endpoint.content_type_prefix
         ):
             sample["error"] = (
                 f"期望 Content-Type {endpoint.content_type_prefix}*，实际 {content_type}"
             )
+            sample["outcome"] = "http_failure"
+            sample["failure_layer"] = "http"
         else:
             sample["ok"] = True
+            sample["outcome"] = "ok"
+            sample["failure_layer"] = ""
         if capture_body:
             sample["_body"] = response.text
         return sample
-    except requests.RequestException as exc:
+    except requests.exceptions.RequestException as exc:
         elapsed_ms = round((time.perf_counter() - started) * 1000, 1)
         sample.update(
             {
@@ -154,9 +167,22 @@ def _sample(
                 "elapsed_ms": elapsed_ms,
                 "content_type": "",
                 "error": f"{type(exc).__name__}: {exc}",
+                "outcome": "transport_failure",
+                "failure_layer": "transport",
+                "transport_error_type": _transport_error_type(exc),
             }
         )
         return sample
+
+
+def _transport_error_type(exc: requests.exceptions.RequestException) -> str:
+    if isinstance(exc, requests.exceptions.Timeout):
+        return "timeout"
+    if isinstance(exc, requests.exceptions.SSLError):
+        return "tls"
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        return "connection"
+    return "request"
 
 
 def _probe_endpoint(
@@ -184,11 +210,21 @@ def _probe_endpoint(
         if sample.get("elapsed_ms") is not None
     ]
     failed = [sample for sample in samples if not sample.get("ok")]
+    received_http_response = any(
+        sample.get("http_code") is not None for sample in samples
+    )
+    if not failed:
+        status = "ok"
+    elif received_http_response:
+        status = "fail"
+    else:
+        status = "inconclusive"
     return {
         "name": endpoint.name,
         "display_name": endpoint.label,
         "url": url,
-        "status": "fail" if failed else "ok",
+        "status": status,
+        "received_http_response": received_http_response,
         "http_codes": sorted(
             {
                 int(sample["http_code"])
@@ -308,15 +344,21 @@ def probe_site(
         clean = dict(result)
         clean.pop("_body", None)
         cleaned_results.append(clean)
+    classification, diagnostics = _classify_run(cleaned_results)
+    if classification == "inconclusive":
+        for result in cleaned_results:
+            result["status"] = "inconclusive"
     finished = now_utc()
     return {
-        "version": 1,
+        "version": 2,
         "run_id": run_id,
         "started_at": started.isoformat(),
         "finished_at": finished.isoformat(),
         "cst_date": cst_day(finished),
         "base_url": base_url.rstrip("/"),
-        "status": "fail" if any(item["status"] != "ok" for item in cleaned_results) else "ok",
+        "status": classification,
+        "classification": classification,
+        "diagnostics": diagnostics,
         "endpoints": cleaned_results,
     }
 
@@ -327,6 +369,7 @@ def _discovery_failure(name: str, display_name: str, error: str) -> dict[str, An
         "display_name": display_name,
         "url": "",
         "status": "fail",
+        "received_http_response": False,
         "http_codes": [],
         "p95_ms": None,
         "max_ms": None,
@@ -338,9 +381,47 @@ def _discovery_failure(name: str, display_name: str, error: str) -> dict[str, An
                 "elapsed_ms": 0.0,
                 "content_type": "",
                 "error": error,
+                "outcome": "discovery_failure",
+                "failure_layer": "discovery",
+                "transport_error_type": "",
             }
         ],
     }
+
+
+def _classify_run(endpoints: list[dict[str, Any]]) -> tuple[str, dict[str, Any]]:
+    network_endpoints = [item for item in endpoints if item.get("url")]
+    http_response_endpoints = [
+        item for item in network_endpoints if item.get("received_http_response")
+    ]
+    transport_failed_endpoints = [
+        item for item in network_endpoints if item.get("status") == "inconclusive"
+    ]
+    error_types = sorted(
+        {
+            sample.get("transport_error_type", "")
+            for item in transport_failed_endpoints
+            for sample in item.get("samples", [])
+            if sample.get("transport_error_type")
+        }
+    )
+    if network_endpoints and not http_response_endpoints:
+        classification = "inconclusive"
+        note = "所有目标端点都在收到 HTTP 响应前失败，无法判断站点页面状态。"
+    elif any(item.get("status") != "ok" for item in endpoints):
+        classification = "fail"
+        note = "至少一个端点收到 HTTP 响应或出现确定性页面失败。"
+    else:
+        classification = "ok"
+        note = "所有端点检查正常。"
+    diagnostics = {
+        "network_endpoints": len(network_endpoints),
+        "http_response_endpoints": len(http_response_endpoints),
+        "transport_failed_endpoints": len(transport_failed_endpoints),
+        "transport_error_types": error_types,
+        "note": note,
+    }
+    return classification, diagnostics
 
 
 def empty_state() -> dict[str, Any]:
@@ -363,11 +444,37 @@ def load_state(comment_body: str | None) -> dict[str, Any]:
         state = json.loads(match.group(1))
     except json.JSONDecodeError:
         return empty_state()
-    if state.get("version") != STATE_VERSION:
+    if state.get("version") == 1:
+        state = _migrate_state_v1(state)
+    elif state.get("version") != STATE_VERSION:
         return empty_state()
     state.setdefault("checks", {})
     state.setdefault("days", {})
     state.setdefault("daily_report_comments", {})
+    return state
+
+
+def _migrate_state_v1(state: dict[str, Any]) -> dict[str, Any]:
+    """清除旧版本把统一传输失败误记为端点故障的状态。"""
+    if state.get("updated_at") != LEGACY_TRANSPORT_RUN_TIMESTAMP:
+        state["version"] = STATE_VERSION
+        return state
+    for check in state.get("checks", {}).values():
+        if check.get("issue") is None:
+            check["failure_streak"] = 0
+            check["success_streak"] = 0
+    for day in state.get("days", {}).values():
+        if day.get("runs") != 1:
+            continue
+        day["abnormal_runs"] = 0
+        day["inconclusive_runs"] = 1
+        for endpoint in day.get("endpoints", {}).values():
+            if endpoint.get("failures") == 1:
+                endpoint["failures"] = 0
+                endpoint["inconclusive_checks"] = 1
+                endpoint["p95_ms"] = []
+                endpoint["perf_alerts"] = 0
+    state["version"] = STATE_VERSION
     return state
 
 
@@ -425,6 +532,7 @@ def apply_checkpoint(
 ) -> list[Event]:
     events: list[Event] = []
     evaluated_at = report["finished_at"]
+    run_inconclusive = report.get("classification", report["status"]) == "inconclusive"
     endpoint_results = {
         result["name"]: result for result in report.get("endpoints", [])
     }
@@ -436,7 +544,7 @@ def apply_checkpoint(
         availability["last_evaluated_at"] = evaluated_at
         action = _transition(
             availability,
-            result["status"] != "ok",
+            None if run_inconclusive else result["status"] != "ok",
             failure_threshold=FAILURE_THRESHOLD,
             recovery_threshold=RECOVERY_THRESHOLD,
         )
@@ -449,7 +557,12 @@ def apply_checkpoint(
         )
         performance["last_evaluated_at"] = evaluated_at
         p95_ms = result.get("p95_ms")
-        if result["status"] != "ok" or p95_ms is None:
+        if (
+            run_inconclusive
+            or result["status"] == "inconclusive"
+            or result["status"] != "ok"
+            or p95_ms is None
+        ):
             perf_failed = None
         else:
             perf_failed = float(p95_ms) > p95_limit_ms
@@ -474,12 +587,18 @@ def _aggregate_day(state: dict[str, Any], report: dict[str, Any]) -> None:
         {
             "runs": 0,
             "abnormal_runs": 0,
+            "inconclusive_runs": 0,
             "endpoints": {},
         },
     )
+    daily.setdefault("abnormal_runs", 0)
+    daily.setdefault("inconclusive_runs", 0)
     daily["runs"] += 1
-    if report["status"] != "ok":
+    classification = report.get("classification", report["status"])
+    if classification == "fail":
         daily["abnormal_runs"] += 1
+    elif classification == "inconclusive":
+        daily["inconclusive_runs"] += 1
     for result in report.get("endpoints", []):
         endpoint = daily["endpoints"].setdefault(
             result["name"],
@@ -487,16 +606,20 @@ def _aggregate_day(state: dict[str, Any], report: dict[str, Any]) -> None:
                 "display_name": result.get("display_name") or result["name"],
                 "checks": 0,
                 "failures": 0,
+                "inconclusive_checks": 0,
                 "perf_alerts": 0,
                 "p95_ms": [],
                 "http_codes": {},
             },
         )
         endpoint["checks"] += 1
+        endpoint.setdefault("inconclusive_checks", 0)
         endpoint["display_name"] = result.get("display_name") or result["name"]
-        if result["status"] != "ok":
+        if classification == "inconclusive":
+            endpoint["inconclusive_checks"] += 1
+        elif result["status"] != "ok":
             endpoint["failures"] += 1
-        if result.get("p95_ms") is not None:
+        if classification != "inconclusive" and result.get("p95_ms") is not None:
             endpoint["p95_ms"].append(round(float(result["p95_ms"]), 1))
             if float(result["p95_ms"]) > P95_LIMIT_MS:
                 endpoint["perf_alerts"] += 1
@@ -893,14 +1016,33 @@ def process_events(
 
 
 def summarize_run(report: dict[str, Any]) -> str:
+    classification = report.get("classification", report["status"])
+    status_label = {
+        "ok": "正常",
+        "fail": "确定故障",
+        "inconclusive": "无法判断",
+    }.get(classification, classification)
     lines = [
-        f"巡检状态：`{report['status']}`",
+        f"巡检状态：`{status_label}`（`{classification}`）",
         f"运行编号：`{report.get('run_id') or 'local'}`",
         f"时间：`{report['finished_at']}`",
-        "",
-        "| 端点 | 状态 | HTTP | p95 ms | 最大 ms |",
-        "| --- | --- | --- | ---: | ---: |",
     ]
+    diagnostics = report.get("diagnostics") or {}
+    if diagnostics:
+        lines.extend(
+            [
+                f"诊断：{diagnostics.get('note', '')}",
+                "错误类型："
+                + (", ".join(diagnostics.get("transport_error_types", [])) or "无"),
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "| 端点 | 状态 | HTTP | p95 ms | 最大 ms |",
+            "| --- | --- | --- | ---: | ---: |",
+        ]
+    )
     for endpoint in report.get("endpoints", []):
         lines.append(
             "| {name} | {status} | {codes} | {p95} | {max_ms} |".format(
@@ -976,7 +1118,8 @@ def build_daily_health(
     daily = state.get("days", {}).get(day)
     if not daily:
         return f"## 每日巡检 {day}（北京时间）\n\n当天没有可用的拨测记录。", False
-    healthy = daily["abnormal_runs"] == 0
+    inconclusive_runs = daily.get("inconclusive_runs", 0)
+    healthy = daily["abnormal_runs"] == 0 and inconclusive_runs == 0
     if healthy:
         report_lines = [
             f"## 每日巡检 {day}（北京时间）\n\n"
@@ -986,23 +1129,35 @@ def build_daily_health(
         if open_incidents:
             report_lines.extend(["", "当前仍未关闭的巡检故障：", *open_incidents])
         return "\n".join(report_lines), True
+    if daily["abnormal_runs"] == 0:
+        return (
+            f"## 每日巡检 {day}（北京时间）\n\n"
+            f"- 判定：无法判断。当天共 `{daily['runs']}` 轮拨测，"
+            f"其中 `{inconclusive_runs}` 轮在收到 HTTP 响应前失败。\n"
+            "- 这些请求不能证明页面可用，也不能按单个页面故障处理。\n"
+            "- 请检查生产入口、DNS、TLS 证书和巡检运行节点的网络。",
+            False,
+        )
     lines = [
         f"## 每日巡检 {day}（北京时间）",
         "",
         f"- 拨测轮次：`{daily['runs']}`",
         f"- 异常轮次：`{daily['abnormal_runs']}`",
+        f"- 无法判断轮次：`{inconclusive_runs}`",
         "",
-        "| 端点 | 检查轮次 | 失败轮次 | 轮次 p95 中位数 | 最大轮次 p95 | 性能告警 | HTTP 状态码 |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| 端点 | 检查轮次 | 失败轮次 | 无法判断 | 轮次 p95 中位数 | "
+        "最大轮次 p95 | 性能告警 | HTTP 状态码 |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for endpoint in daily["endpoints"].values():
         p95_values = endpoint.get("p95_ms") or [0]
         lines.append(
-            "| {name} | {checks} | {failures} | {median} | {maximum} | "
-            "{perf} | {codes} |".format(
+            "| {name} | {checks} | {failures} | {inconclusive} | {median} | "
+            "{maximum} | {perf} | {codes} |".format(
                 name=endpoint.get("display_name") or "未知",
                 checks=endpoint["checks"],
                 failures=endpoint["failures"],
+                inconclusive=endpoint.get("inconclusive_checks", 0),
                 median=_mean(endpoint.get("p95_ms", [])),
                 maximum=max(p95_values),
                 perf=endpoint.get("perf_alerts", 0),
@@ -1306,6 +1461,13 @@ def command_run(args: argparse.Namespace) -> int:
     lines = [summarize_run(report)]
     if result["messages"]:
         lines.extend(["", "### 故障单操作", *[f"- {item}" for item in result["messages"]]])
+    elif report.get("classification") == "inconclusive":
+        lines.extend(
+            [
+                "",
+                "本轮在收到 HTTP 响应前失败，只记录探测层异常，不更新端点故障计数。",
+            ]
+        )
     elif not args.no_github:
         lines.extend(["", "本次没有需要创建、重开或关闭的故障 Issue。"])
     _write_step_summary("\n".join(lines))
