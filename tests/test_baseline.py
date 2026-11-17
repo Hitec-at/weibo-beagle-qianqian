@@ -69,6 +69,49 @@ exclude = ["排除"]
         self.assertEqual(by_status[("published", "curated")], 1)
         self.assertEqual(result["version"], "baseline-test")
 
+    def test_birthday_gift_terms_generate_candidates_without_public_links(
+        self,
+    ) -> None:
+        conn = store.connect()
+        try:
+            for post_id, text in (
+                ("5", "十岁大寿到了"),
+                ("6", "为钱钱进献的寿礼"),
+                ("7", "钱钱收礼"),
+            ):
+                conn.execute(
+                    "INSERT INTO posts (id, text_plain) VALUES (?, ?)",
+                    (post_id, text),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        seed = Path(self.temp_dir.name) / "birthday-gifts.toml"
+        seed.write_text(
+            """
+[[memes]]
+slug = "shouli-birthday-test"
+name = "收礼测试"
+match_mode = "mixed"
+auto_publish_terms = ["收礼"]
+candidate_terms = ["寿礼", "十岁大寿"]
+""",
+            encoding="utf-8",
+        )
+
+        baseline.build("baseline-birthday-gifts", seed_path=seed)
+
+        self.assertEqual(
+            {row["id"] for row in store.query_meme_posts("shouli-birthday-test")},
+            {"7"},
+        )
+        rows = store.baseline_candidate_stats("baseline-birthday-gifts")
+        by_status = {
+            (row["status"], row["source"]): row["post_count"] for row in rows
+        }
+        self.assertEqual(by_status[("published", "local")], 1)
+        self.assertEqual(by_status[("candidate", "local")], 2)
+
     def test_baseline_version_is_immutable(self) -> None:
         baseline.build("baseline-test", seed_path=self.seed)
         with self.assertRaisesRegex(ValueError, "baseline 已存在"):

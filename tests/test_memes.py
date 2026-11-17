@@ -81,6 +81,15 @@ class MemeSeedTest(unittest.TestCase):
             seed["pangshou-erxiangxing"]["boundary"],
         )
 
+    def test_birthday_gift_terms_are_candidate_only(self) -> None:
+        seed = {item["slug"]: item for item in memes.load_seed()}
+        shouli = seed["shouli"]
+
+        self.assertTrue({"寿礼", "十岁大寿"} <= set(shouli["candidate_terms"]))
+        self.assertFalse(
+            {"寿礼", "十岁大寿"} & set(shouli["auto_publish_terms"])
+        )
+
     def test_fan_fiction_categories_are_registered(self) -> None:
         seed = {item["slug"]: item for item in memes.load_seed()}
 
