@@ -13,7 +13,7 @@
 - 提交前运行：
 
   ```bash
-  python -m compileall -q app baseline.py comment_pilot.py config.py classify.py fetch_weibo.py filters.py memes.py store.py wbq.py
+  python -m compileall -q app baseline.py comment_pilot.py config.py classify.py fetch_weibo.py filters.py memes.py patrol.py store.py wbq.py
   python -m unittest discover -s tests -v
   ```
 
