@@ -35,6 +35,8 @@ CST = timezone(timedelta(hours=8))
 STATE_VERSION = 2
 STATE_RETENTION_DAYS = 3
 LEGACY_TRANSPORT_RUN_TIMESTAMP = "2026-11-17T09:02:58.281478+00:00"
+ENTRY_CHECK_KEY = "entry:transport"
+ENTRY_FINGERPRINT = "entry:transport-unreachable"
 # 该微博是页面不暴露站内详情链接时使用的稳定真实样本。
 # 微博 ID 本身不可变；巡检不依赖 data-latest 或本地数据库。
 DEFAULT_POST_PATH = "/post/5231732026510004"
@@ -575,6 +577,20 @@ def apply_checkpoint(
         if action != "none":
             events.append(Event(performance_key, name, "performance", action))
 
+    entry = state["checks"].setdefault(
+        ENTRY_CHECK_KEY,
+        _empty_check("entry", "transport"),
+    )
+    entry["last_evaluated_at"] = evaluated_at
+    action = _transition(
+        entry,
+        run_inconclusive,
+        failure_threshold=1,
+        recovery_threshold=RECOVERY_THRESHOLD,
+    )
+    if action != "none":
+        events.append(Event(ENTRY_CHECK_KEY, "entry", "transport", action))
+
     _aggregate_day(state, report)
     state["updated_at"] = evaluated_at
     return events
@@ -637,6 +653,8 @@ def _aggregate_day(state: dict[str, Any], report: dict[str, Any]) -> None:
 
 
 def _priority_for_check(endpoint: str, kind: str) -> str:
+    if kind == "transport":
+        return "priority:P0"
     if kind == "performance":
         return "priority:P2"
     if endpoint == "healthz":
@@ -883,6 +901,12 @@ def incident_body(
     report: dict[str, Any],
     check: dict[str, Any],
 ) -> str:
+    if kind == "transport":
+        return _transport_incident_body(
+            fingerprint=fingerprint,
+            report=report,
+            check=check,
+        )
     result = _report_endpoint(report, endpoint)
     failures = [
         sample for sample in result.get("samples", []) if not sample.get("ok")
@@ -923,6 +947,63 @@ def incident_body(
     )
 
 
+def _transport_incident_body(
+    *,
+    fingerprint: str,
+    report: dict[str, Any],
+    check: dict[str, Any],
+) -> str:
+    diagnostics = report.get("diagnostics") or {}
+    failed_endpoints = [
+        result
+        for result in report.get("endpoints", [])
+        if result.get("url") and not result.get("received_http_response")
+    ]
+    error_lines = []
+    for result in failed_endpoints[:12]:
+        sample = next(
+            (
+                item
+                for item in result.get("samples", [])
+                if item.get("transport_error_type")
+            ),
+            {},
+        )
+        error_lines.append(
+            f"- `{result.get('display_name') or result.get('name')}`："
+            f"{sample.get('transport_error_type') or 'transport'}"
+            f"；{sample.get('error') or '未收到 HTTP 响应'}"
+        )
+    return "\n".join(
+        [
+            f"<!-- patrol-fingerprint:{fingerprint} -->",
+            "## 生产入口无法建立 HTTP 连接",
+            "",
+            "此 Issue 由生产巡检自动维护。整轮所有公开端点都在收到 HTTP 响应前失败时，"
+            "只保留这一张入口级故障单。",
+            "",
+            "<!-- patrol-live-start -->",
+            f"- 运行编号：`{report.get('run_id') or 'local'}`",
+            f"- 最近检查：`{report.get('finished_at')}`",
+            f"- 网络端点数：`{diagnostics.get('network_endpoints', 0)}`",
+            f"- 未收到 HTTP 响应的端点数：`{len(failed_endpoints)}`",
+            "- 错误类型：`"
+            + (", ".join(diagnostics.get("transport_error_types", [])) or "未知")
+            + "`",
+            f"- 连续无法连接轮次：`{check.get('failure_streak', 0)}`",
+            *error_lines,
+            "<!-- patrol-live-end -->",
+            "",
+            "## 处理边界",
+            "",
+            "- 可能原因包括生产入口、DNS、TLS 证书或巡检运行节点网络。",
+            "- 这是入口级故障单，不代表每个页面都已独立故障。",
+            f"- 收到任意 HTTP 响应后开始累计恢复，连续 {RECOVERY_THRESHOLD} 轮后自动关闭。",
+            "- 站点返回 500 或 502 时表示入口连接已建立，本单会关闭；页面错误按端点规则另行处理。",
+        ]
+    )
+
+
 def _replace_live_section(body: str, new_body: str) -> str:
     pattern = re.compile(
         r"<!-- patrol-live-start -->.*?<!-- patrol-live-end -->",
@@ -949,15 +1030,23 @@ def process_events(
     messages = []
     for event in events:
         check = state["checks"][event.key]
-        fingerprint = event.key
+        fingerprint = (
+            ENTRY_FINGERPRINT
+            if event.kind == "transport"
+            else event.key
+        )
         current_issue = check.get("issue") or {}
         existing = gh.find_incident(fingerprint)
         issue_number = (
             existing["number"] if existing else current_issue.get("number")
         )
         priority = _priority_for_check(event.endpoint, event.kind)
-        display_name = _report_endpoint(report, event.endpoint).get(
-            "display_name", event.endpoint
+        display_name = (
+            "生产入口"
+            if event.kind == "transport"
+            else _report_endpoint(report, event.endpoint).get(
+                "display_name", event.endpoint
+            )
         )
         body = incident_body(
             fingerprint, event.endpoint, event.kind, report, check
@@ -971,9 +1060,14 @@ def process_events(
                 if parse_timestamp(report["finished_at"]) - last_update < INCIDENT_UPDATE_INTERVAL:
                     continue
             if not issue_number:
-                suffix = "性能超阈值" if event.kind == "performance" else "连续不可用"
+                if event.kind == "performance":
+                    title = f"[巡检] {display_name} 性能超阈值"
+                elif event.kind == "transport":
+                    title = "[巡检] 生产入口无法建立 HTTP 连接"
+                else:
+                    title = f"[巡检] {display_name} 连续不可用"
                 created = gh.create_incident(
-                    title=f"[巡检] {display_name} {suffix}",
+                    title=title,
                     body=body,
                     priority=priority,
                 )
@@ -1182,7 +1276,12 @@ def _current_open_incidents(state: dict[str, Any]) -> list[str]:
         issue = check.get("issue") or {}
         if issue.get("state") != "open":
             continue
-        status = "性能" if check.get("kind") == "performance" else "可用性"
+        if check.get("kind") == "performance":
+            status = "性能"
+        elif check.get("kind") == "transport":
+            status = "入口不可达"
+        else:
+            status = "可用性"
         items.append(
             f"- #{issue.get('number')} `{check.get('endpoint')}` {status}故障"
         )
@@ -1465,7 +1564,8 @@ def command_run(args: argparse.Namespace) -> int:
         lines.extend(
             [
                 "",
-                "本轮在收到 HTTP 响应前失败，只记录探测层异常，不更新端点故障计数。",
+                "本轮在收到 HTTP 响应前失败，只维护一张入口故障 Issue，"
+                "不更新端点故障计数。",
             ]
         )
     elif not args.no_github:

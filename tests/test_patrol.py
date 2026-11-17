@@ -91,6 +91,10 @@ def report(
         "status": resolved_classification,
         "classification": resolved_classification,
         "diagnostics": {
+            "network_endpoints": 1,
+            "http_response_endpoints": (
+                0 if resolved_classification == "inconclusive" else 1
+            ),
             "transport_error_types": (
                 ["tls"] if resolved_classification == "inconclusive" else []
             )
@@ -226,7 +230,7 @@ class StateTransitionTest(unittest.TestCase):
         self.assertEqual(health["failures"], 1)
         self.assertEqual(health["http_codes"], {"200": 1, "502": 1})
 
-    def test_inconclusive_run_does_not_change_failure_streak(self) -> None:
+    def test_inconclusive_run_only_advances_entry_check(self) -> None:
         state = patrol.empty_state()
         check = state["checks"].setdefault(
             "healthz:availability",
@@ -239,9 +243,39 @@ class StateTransitionTest(unittest.TestCase):
             report(status="inconclusive", p95_ms=None),
         )
 
-        self.assertEqual(events, [])
+        self.assertEqual(
+            [(event.key, event.kind, event.action) for event in events],
+            [(patrol.ENTRY_CHECK_KEY, "transport", "open")],
+        )
         self.assertEqual(check["failure_streak"], 1)
         self.assertEqual(check["success_streak"], 0)
+        entry = state["checks"][patrol.ENTRY_CHECK_KEY]
+        self.assertEqual(entry["failure_streak"], 1)
+
+    def test_http_error_counts_as_entry_recovery_signal(self) -> None:
+        state = patrol.empty_state()
+        entry = state["checks"].setdefault(
+            patrol.ENTRY_CHECK_KEY,
+            patrol._empty_check("entry", "transport"),
+        )
+        entry["issue"] = {"number": 106, "state": "open"}
+
+        failed_http = report(status="fail", p95_ms=None)
+        entry_events = []
+        for _ in range(3):
+            events = patrol.apply_checkpoint(state, failed_http)
+            entry_events.extend(
+                event for event in events if event.kind == "transport"
+            )
+
+        self.assertIn(
+            (patrol.ENTRY_CHECK_KEY, "transport", "recover"),
+            [
+                (event.key, event.kind, event.action)
+                for event in entry_events
+            ],
+        )
+        self.assertEqual(entry["success_streak"], 3)
 
     def test_daily_aggregate_counts_inconclusive_separately(self) -> None:
         state = patrol.empty_state()
@@ -277,6 +311,215 @@ class StateTransitionTest(unittest.TestCase):
 
 
 class IssueLifecycleTest(unittest.TestCase):
+    def test_existing_entry_issue_is_adopted_without_duplicate(self) -> None:
+        state = patrol.empty_state()
+        inconclusive = report(status="inconclusive", p95_ms=None)
+        events = patrol.apply_checkpoint(state, inconclusive)
+
+        class FakeGh:
+            def __init__(self) -> None:
+                self.created = []
+                self.updated = []
+                self.incident = {
+                    "number": 99,
+                    "state": "OPEN",
+                    "body": (
+                        f"<!-- patrol-fingerprint:{patrol.ENTRY_FINGERPRINT} -->\n"
+                        "## 现象\n保留人工记录\n"
+                        "<!-- patrol-live-start -->\n旧状态\n"
+                        "<!-- patrol-live-end -->\n\n## 验收\n保留"
+                    ),
+                }
+
+            def find_incident(self, fingerprint):
+                return self.incident
+
+            def create_incident(self, *, title, body, priority):
+                self.created.append((title, body, priority))
+                return {"number": 999, "state": "OPEN"}
+
+            def update_issue_body(self, number, body):
+                self.updated.append((number, body))
+
+        gh = FakeGh()
+        messages = patrol.process_events(state, inconclusive, events, gh)
+
+        self.assertEqual(gh.created, [])
+        self.assertEqual(gh.updated[-1][0], 99)
+        self.assertIn("## 现象\n保留人工记录", gh.updated[-1][1])
+        self.assertIn("## 验收\n保留", gh.updated[-1][1])
+        self.assertEqual(
+            state["checks"][patrol.ENTRY_CHECK_KEY]["issue"]["number"],
+            99,
+        )
+        self.assertIn("更新故障 Issue #99", messages[0])
+
+    def test_inconclusive_run_creates_one_entry_level_issue(self) -> None:
+        state = patrol.empty_state()
+        inconclusive = report(status="inconclusive", p95_ms=None)
+        events = patrol.apply_checkpoint(state, inconclusive)
+
+        class FakeGh:
+            def __init__(self) -> None:
+                self.created = []
+                self.incident = None
+
+            def find_incident(self, fingerprint):
+                return self.incident
+
+            def create_incident(self, *, title, body, priority):
+                self.created.append((title, body, priority))
+                self.incident = {
+                    "number": 106,
+                    "state": "OPEN",
+                    "body": body,
+                    "url": "https://example.test/issues/106",
+                }
+                return self.incident
+
+            def update_issue_body(self, number, body):
+                self.fail("第一次入口故障不应更新其他 Issue")
+
+            def issue(self, number):
+                return self.incident
+
+        gh = FakeGh()
+        messages = patrol.process_events(state, inconclusive, events, gh)
+
+        self.assertEqual(len(gh.created), 1)
+        title, body, priority = gh.created[0]
+        self.assertEqual(title, "[巡检] 生产入口无法建立 HTTP 连接")
+        self.assertEqual(priority, "priority:P0")
+        self.assertIn(
+            f"<!-- patrol-fingerprint:{patrol.ENTRY_FINGERPRINT} -->",
+            body,
+        )
+        self.assertIn("生产入口、DNS、TLS 证书或巡检运行节点网络", body)
+        self.assertIn("不代表每个页面都已独立故障", body)
+        self.assertIn("创建故障 Issue #106", messages[0])
+        self.assertEqual(
+            state["checks"][patrol.ENTRY_CHECK_KEY]["issue"]["number"],
+            106,
+        )
+
+    def test_continuous_transport_failure_updates_single_entry_issue(self) -> None:
+        state = patrol.empty_state()
+        inconclusive = report(status="inconclusive", p95_ms=None)
+        patrol.apply_checkpoint(state, inconclusive)
+        entry = state["checks"][patrol.ENTRY_CHECK_KEY]
+        entry["issue"] = {
+            "number": 107,
+            "state": "open",
+            "last_issue_update_at": "2026-11-17T00:00:00+00:00",
+        }
+
+        events = patrol.apply_checkpoint(state, inconclusive)
+        later = report(
+            finished_at="2026-11-17T01:01:00+00:00",
+            status="inconclusive",
+            p95_ms=None,
+        )
+
+        class FakeGh:
+            def __init__(self) -> None:
+                self.created = []
+                self.updated = []
+                self.incident = {
+                    "number": 107,
+                    "state": "OPEN",
+                    "body": (
+                        f"<!-- patrol-fingerprint:{patrol.ENTRY_FINGERPRINT} -->\n"
+                        "<!-- patrol-live-start -->\n旧状态\n"
+                        "<!-- patrol-live-end -->"
+                    ),
+                }
+
+            def find_incident(self, fingerprint):
+                return self.incident
+
+            def create_incident(self, *, title, body, priority):
+                self.created.append((title, body, priority))
+                return {"number": 999, "state": "OPEN"}
+
+            def update_issue_body(self, number, body):
+                self.updated.append((number, body))
+
+        gh = FakeGh()
+        messages = patrol.process_events(state, later, events, gh)
+
+        self.assertEqual(gh.created, [])
+        self.assertEqual(gh.updated[-1][0], 107)
+        self.assertEqual(len(gh.updated), 1)
+        self.assertIn("更新故障 Issue #107", messages[0])
+
+    def test_transport_failure_reopens_closed_entry_issue(self) -> None:
+        state = patrol.empty_state()
+        entry = state["checks"].setdefault(
+            patrol.ENTRY_CHECK_KEY,
+            patrol._empty_check("entry", "transport"),
+        )
+        entry["issue"] = {"number": 108, "state": "closed"}
+        inconclusive = report(status="inconclusive", p95_ms=None)
+        events = patrol.apply_checkpoint(state, inconclusive)
+
+        class FakeGh:
+            def __init__(self) -> None:
+                self.reopened = []
+                self.updated = []
+                self.incident = {
+                    "number": 108,
+                    "state": "CLOSED",
+                    "body": (
+                        f"<!-- patrol-fingerprint:{patrol.ENTRY_FINGERPRINT} -->\n"
+                        "<!-- patrol-live-start -->\n旧状态\n"
+                        "<!-- patrol-live-end -->"
+                    ),
+                }
+
+            def find_incident(self, fingerprint):
+                return self.incident
+
+            def reopen_issue(self, number):
+                self.reopened.append(number)
+
+            def update_issue_body(self, number, body):
+                self.updated.append((number, body))
+
+        gh = FakeGh()
+        messages = patrol.process_events(state, inconclusive, events, gh)
+
+        self.assertEqual(gh.reopened, [108])
+        self.assertEqual(gh.updated[-1][0], 108)
+        self.assertIn("重新打开故障 Issue #108", messages[0])
+
+    def test_entry_recovery_closes_single_issue_after_http_returns(self) -> None:
+        state = patrol.empty_state()
+        entry = state["checks"].setdefault(
+            patrol.ENTRY_CHECK_KEY,
+            patrol._empty_check("entry", "transport"),
+        )
+        entry["issue"] = {"number": 109, "state": "open"}
+        healthy = report()
+        for _ in range(3):
+            events = patrol.apply_checkpoint(state, healthy)
+
+        class FakeGh:
+            def __init__(self) -> None:
+                self.closed = None
+
+            def find_incident(self, fingerprint):
+                return {"number": 109, "state": "OPEN"}
+
+            def close_issue(self, number, body):
+                self.closed = (number, body)
+
+        gh = FakeGh()
+        messages = patrol.process_events(state, healthy, events, gh)
+
+        self.assertEqual(gh.closed[0], 109)
+        self.assertIn("关闭已恢复故障 Issue #109", messages[0])
+        self.assertEqual(entry["issue"]["state"], "closed")
+
     def test_same_fingerprint_updates_existing_issue(self) -> None:
         state = patrol.empty_state()
         failed = report(status="fail", p95_ms=None)
