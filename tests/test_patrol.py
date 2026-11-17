@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
+import requests
+
 import patrol
 
 
@@ -19,22 +21,52 @@ def endpoint_result(
     p95_ms: float | None = 500,
     http_codes: list[int] | None = None,
 ) -> dict:
+    received_http_response = status != "inconclusive"
+    resolved_codes = (
+        http_codes
+        if http_codes is not None
+        else ([200] if status == "ok" else ([502] if received_http_response else []))
+    )
     return {
         "name": name,
         "display_name": name,
         "url": f"https://example.test/{name}",
         "status": status,
-        "http_codes": http_codes or ([200] if status == "ok" else [502]),
-        "p95_ms": p95_ms,
-        "max_ms": p95_ms,
+        "received_http_response": received_http_response,
+        "http_codes": resolved_codes,
+        "p95_ms": p95_ms if status != "inconclusive" else None,
+        "max_ms": p95_ms if status != "inconclusive" else None,
         "samples": [
             {
                 "cold": True,
                 "ok": status == "ok",
-                "http_code": 200 if status == "ok" else 502,
+                "http_code": (
+                    None
+                    if status == "inconclusive"
+                    else (200 if status == "ok" else 502)
+                ),
                 "elapsed_ms": p95_ms or 100,
                 "content_type": "text/html",
                 "error": "上游失败" if status != "ok" else "",
+                "outcome": (
+                    "ok"
+                    if status == "ok"
+                    else (
+                        "transport_failure"
+                        if status == "inconclusive"
+                        else "http_failure"
+                    )
+                ),
+                "failure_layer": (
+                    ""
+                    if status == "ok"
+                    else (
+                        "transport" if status == "inconclusive" else "http"
+                    )
+                ),
+                "transport_error_type": (
+                    "tls" if status == "inconclusive" else ""
+                ),
             }
         ],
     }
@@ -46,15 +78,23 @@ def report(
     day: str = "2026-11-17",
     status: str = "ok",
     p95_ms: float = 500,
+    classification: str | None = None,
 ) -> dict:
+    resolved_classification = classification or status
     return {
-        "version": 1,
+        "version": 2,
         "run_id": "test-run",
         "started_at": finished_at,
         "finished_at": finished_at,
         "cst_date": day,
         "base_url": "https://example.test",
-        "status": status,
+        "status": resolved_classification,
+        "classification": resolved_classification,
+        "diagnostics": {
+            "transport_error_types": (
+                ["tls"] if resolved_classification == "inconclusive" else []
+            )
+        },
         "endpoints": [
             endpoint_result(
                 "healthz",
@@ -84,6 +124,48 @@ class PercentileAndDiscoveryTest(unittest.TestCase):
             patrol._discover_image_path(page),
             "/img?u=https%3A%2F%2Fwx1.sinaimg.cn%2Fdemo.jpg",
         )
+
+    def test_all_transport_failures_are_inconclusive(self) -> None:
+        class FailingSession:
+            def get(self, *args, **kwargs):
+                raise requests.exceptions.SSLError("connection reset")
+
+        result = patrol.probe_site(
+            "https://example.test",
+            session=FailingSession(),
+        )
+
+        self.assertEqual(result["classification"], "inconclusive")
+        self.assertEqual(result["status"], "inconclusive")
+        self.assertEqual(result["diagnostics"]["http_response_endpoints"], 0)
+        self.assertEqual(result["diagnostics"]["transport_failed_endpoints"], 11)
+        self.assertEqual(result["diagnostics"]["transport_error_types"], ["tls"])
+
+    def test_one_http_response_makes_failure_conclusive(self) -> None:
+        class MixedSession:
+            def get(self, url, *args, **kwargs):
+                if url.endswith("/healthz"):
+                    return FakeResponse(status_code=502, text="bad gateway")
+                raise requests.exceptions.ConnectionError("connection reset")
+
+        result = patrol.probe_site(
+            "https://example.test",
+            session=MixedSession(),
+        )
+
+        self.assertEqual(result["classification"], "fail")
+        self.assertEqual(result["diagnostics"]["http_response_endpoints"], 1)
+        self.assertGreater(
+            result["diagnostics"]["transport_failed_endpoints"],
+            0,
+        )
+
+
+class FakeResponse:
+    def __init__(self, *, status_code: int, text: str = "") -> None:
+        self.status_code = status_code
+        self.headers = {"Content-Type": "text/html; charset=utf-8"}
+        self.text = text
 
 
 class StateTransitionTest(unittest.TestCase):
@@ -143,6 +225,38 @@ class StateTransitionTest(unittest.TestCase):
         self.assertEqual(health["checks"], 2)
         self.assertEqual(health["failures"], 1)
         self.assertEqual(health["http_codes"], {"200": 1, "502": 1})
+
+    def test_inconclusive_run_does_not_change_failure_streak(self) -> None:
+        state = patrol.empty_state()
+        check = state["checks"].setdefault(
+            "healthz:availability",
+            patrol._empty_check("healthz", "availability"),
+        )
+        check["failure_streak"] = 1
+
+        events = patrol.apply_checkpoint(
+            state,
+            report(status="inconclusive", p95_ms=None),
+        )
+
+        self.assertEqual(events, [])
+        self.assertEqual(check["failure_streak"], 1)
+        self.assertEqual(check["success_streak"], 0)
+
+    def test_daily_aggregate_counts_inconclusive_separately(self) -> None:
+        state = patrol.empty_state()
+        patrol.apply_checkpoint(
+            state,
+            report(status="inconclusive", p95_ms=None),
+        )
+        daily = state["days"]["2026-11-17"]
+        self.assertEqual(daily["runs"], 1)
+        self.assertEqual(daily["abnormal_runs"], 0)
+        self.assertEqual(daily["inconclusive_runs"], 1)
+        health = daily["endpoints"]["healthz"]
+        self.assertEqual(health["failures"], 0)
+        self.assertEqual(health["inconclusive_checks"], 1)
+        self.assertEqual(health["p95_ms"], [])
 
     def test_daily_aggregate_keeps_current_and_previous_two_days(self) -> None:
         state = patrol.empty_state()
@@ -306,6 +420,54 @@ class StateCommentTest(unittest.TestCase):
 
     def test_invalid_state_is_ignored(self) -> None:
         self.assertEqual(patrol.load_state("not json"), patrol.empty_state())
+
+    def test_legacy_transport_failure_state_is_migrated(self) -> None:
+        legacy = {
+            "version": 1,
+            "updated_at": patrol.LEGACY_TRANSPORT_RUN_TIMESTAMP,
+            "checks": {
+                "healthz:availability": {
+                    **patrol._empty_check("healthz", "availability"),
+                    "failure_streak": 1,
+                    "last_evaluated_at": patrol.LEGACY_TRANSPORT_RUN_TIMESTAMP,
+                }
+            },
+            "days": {
+                "2026-11-17": {
+                    "runs": 1,
+                    "abnormal_runs": 1,
+                    "endpoints": {
+                        "healthz": {
+                            "display_name": "healthz",
+                            "checks": 1,
+                            "failures": 1,
+                            "perf_alerts": 0,
+                            "p95_ms": [100.0],
+                            "http_codes": {},
+                        }
+                    },
+                }
+            },
+            "daily_report_comments": {},
+        }
+        body = (
+            f"{patrol.STATE_MARKER}\n```json\n"
+            f"{json.dumps(legacy)}\n```"
+        )
+
+        migrated = patrol.load_state(body)
+
+        self.assertEqual(migrated["version"], 2)
+        check = migrated["checks"]["healthz:availability"]
+        self.assertEqual(check["failure_streak"], 0)
+        day = migrated["days"]["2026-11-17"]
+        self.assertEqual(day["abnormal_runs"], 0)
+        self.assertEqual(day["inconclusive_runs"], 1)
+        self.assertEqual(day["endpoints"]["healthz"]["failures"], 0)
+        self.assertEqual(
+            day["endpoints"]["healthz"]["inconclusive_checks"],
+            1,
+        )
 
     def test_three_days_of_full_endpoint_samples_stay_below_comment_limit(self) -> None:
         state = patrol.empty_state()
@@ -478,6 +640,23 @@ class TriageTest(unittest.TestCase):
         )
         self.assertFalse(healthy)
         self.assertIn("图片代理", markdown)
+
+    def test_daily_report_marks_inconclusive_day(self) -> None:
+        state = patrol.empty_state()
+        state["days"]["2026-11-16"] = {
+            "runs": 4,
+            "abnormal_runs": 0,
+            "inconclusive_runs": 4,
+            "endpoints": {},
+        }
+        markdown, healthy = patrol.daily_report_markdown(
+            state=state,
+            day="2026-11-16",
+            triage_items=[],
+        )
+        self.assertFalse(healthy)
+        self.assertIn("无法判断", markdown)
+        self.assertIn("收到 HTTP 响应前失败", markdown)
 
     def test_daily_report_upserts_one_comment_per_day(self) -> None:
         class FakeGh:
