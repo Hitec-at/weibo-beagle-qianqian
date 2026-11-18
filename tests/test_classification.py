@@ -44,6 +44,11 @@ class ClassificationTest(unittest.TestCase):
         self.assertIn("qianqian_aliases", categories)
         self.assertNotIn("memes", categories)
 
+        categories = classify.classify_post(
+            self._post("2", "细看就会发现这是一头三色大花猪")
+        )
+        self.assertIn("qianqian_aliases", categories)
+
         categories = classify.classify_post(self._post("1", "今天天气不错"))
         self.assertNotIn("qianqian_aliases", categories)
 

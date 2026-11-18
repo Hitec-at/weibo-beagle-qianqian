@@ -90,6 +90,19 @@ class MemeSeedTest(unittest.TestCase):
             {"寿礼", "十岁大寿"} & set(shouli["auto_publish_terms"])
         )
 
+    def test_20261118_semantic_terms_are_candidate_only(self) -> None:
+        seed = {item["slug"]: item for item in memes.load_seed()}
+
+        for slug, terms in {
+            "touchi": {"鸡饭", "鸡食"},
+            "cunzhang": {"钱村"},
+        }.items():
+            with self.subTest(slug=slug):
+                rule = seed[slug]
+                self.assertTrue(terms <= set(rule["candidate_terms"]))
+                self.assertTrue(terms <= set(rule["search_queries"]))
+                self.assertFalse(terms & set(rule["auto_publish_terms"]))
+
     def test_fan_fiction_categories_are_registered(self) -> None:
         seed = {item["slug"]: item for item in memes.load_seed()}
 
