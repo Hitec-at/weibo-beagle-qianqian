@@ -25,8 +25,9 @@ class CandidateReviewTest(unittest.TestCase):
             )
             conn.execute(
                 "INSERT INTO posts "
-                "(id, screen_name, created_at, text_plain, comments_count) "
-                "VALUES ('100', 'target', '2026-11-12', '直接行为证据', 2)"
+                "(id, mid, uid, screen_name, created_at, text_plain, comments_count) "
+                "VALUES ('100', 'AbC123', '42', 'target', "
+                "'2026-11-12', '直接行为证据', 2)"
             )
             conn.execute(
                 "INSERT INTO posts "
@@ -126,6 +127,10 @@ class CandidateReviewTest(unittest.TestCase):
         item = next(item for item in items if item["post_id"] == "100")
         self.assertEqual(item["meme"]["name"], "测试条目")
         self.assertEqual(item["comments"]["roots"][0]["comment_id"], "c1")
+        self.assertEqual(
+            item["post"]["url"],
+            "https://weibo.com/42/AbC123",
+        )
 
     def test_record_applies_confident_accept_and_queues_uncertain(self) -> None:
         items = candidate_review.pending_items()
@@ -172,6 +177,10 @@ class CandidateReviewTest(unittest.TestCase):
         self.assertEqual(human["pending"], 1)
         markdown = Path(human["markdown"]).read_text(encoding="utf-8")
         self.assertIn("需要上下文", markdown)
+        self.assertIn(
+            "[微博原文](https://m.weibo.cn/detail/200)（`200`）",
+            markdown,
+        )
 
     def test_published_candidate_suppresses_older_candidate(self) -> None:
         conn = store.connect()

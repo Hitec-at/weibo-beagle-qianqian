@@ -267,6 +267,11 @@ class DailyOpsTest(unittest.TestCase):
             self.root / "review",
             "20261114T010000Z",
             proposals_path=proposals,
+            post_lookup=lambda post_id: {
+                "id": post_id,
+                "uid": "42",
+                "mid": f"m-{post_id}",
+            },
         )
 
         self.assertEqual(result["human_candidates"], 1)
@@ -274,7 +279,14 @@ class DailyOpsTest(unittest.TestCase):
         markdown = Path(result["markdown"]).read_text(encoding="utf-8")
         self.assertIn("第一部分：待确认微博（1）", markdown)
         self.assertIn("第二部分：规则与内容建议（1）", markdown)
-        self.assertIn("100/c1", markdown)
+        self.assertIn(
+            "[微博原文（100/c1）](https://weibo.com/42/m-100)",
+            markdown,
+        )
+        self.assertIn(
+            "[微博原文](https://weibo.com/42/m-100)（`100`）",
+            markdown,
+        )
 
     def test_invalid_semantic_proposal_kind_is_rejected(self) -> None:
         path = self.root / "bad.json"

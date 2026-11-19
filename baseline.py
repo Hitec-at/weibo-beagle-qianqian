@@ -10,6 +10,7 @@ from pathlib import Path
 import config
 import memes
 import store
+from weibo_links import markdown_link, original_url
 
 
 EVIDENCE_SCHEMA_VERSION = 1
@@ -485,6 +486,16 @@ def export_review(version: str, output_path: str | Path) -> dict:
     """导出 JSON、CSV 和 Markdown 人工审核清单。"""
     result = report(version)
     rows = store.baseline_review_rows(version)
+    for row in rows:
+        post_mid = row.pop("post_mid", "")
+        post_uid = row.pop("post_uid", "")
+        row["url"] = original_url(
+            {
+                "id": row.get("post_id"),
+                "mid": post_mid,
+                "uid": post_uid,
+            }
+        )
     output = Path(output_path)
     output.mkdir(parents=True, exist_ok=True)
 
@@ -507,6 +518,7 @@ def export_review(version: str, output_path: str | Path) -> dict:
         "search_rank",
         "matched_term",
         "post_id",
+        "url",
         "created_at",
         "text_plain",
         "review_decision",
@@ -539,20 +551,25 @@ def export_review(version: str, output_path: str | Path) -> dict:
         "",
         "审核决定填写 `keep`、`candidate` 或 `exclude`；本条清单不自动修改人工审定集合。",
         "",
-        "| 罪名 | 状态 | 来源 | 查询 | 排名 | 命中词 | post id | 正文摘要 | 决定 | 备注 |",
+        "| 罪名 | 状态 | 来源 | 查询 | 排名 | 命中词 | 微博 | 正文摘要 | 决定 | 备注 |",
         "|---|---|---|---|---:|---|---|---|---|---|",
     ]
     for row in rows:
+        post_cell = markdown_link(
+            row.get("post_id") or "",
+            row.get("url") or "",
+            label="原文",
+        )
         lines.append(
             "| {meme_slug} | {status} | {source} | {query} | {rank} | "
-            "{matched_term} | {post_id} | {text} |  |  |".format(
+            "{matched_term} | {post_cell} | {text} |  |  |".format(
                 meme_slug=_md(row.get("meme_slug")),
                 status=_md(row.get("status")),
                 source=_md(row.get("source")),
                 query=_md(row.get("query")),
                 rank=_md(row.get("search_rank")),
                 matched_term=_md(row.get("matched_term")),
-                post_id=_md(row.get("post_id")),
+                post_cell=post_cell,
                 text=_md((row.get("text_plain") or "")[:180]),
             )
         )

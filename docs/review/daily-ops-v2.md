@@ -118,7 +118,7 @@
   --output dist/daily-review/REVIEW_STAMP
 ```
 
-输出 `daily-review.json` 和 `daily-review.md`。第一部分是待确认微博，第二部分是规则、分类和语义文档建议。
+输出 `daily-review.json` 和 `daily-review.md`。第一部分是待确认微博，第二部分是规则、分类和语义文档建议。两部分都应为涉及的微博提供可直接打开的“微博原文”链接，同时保留 `post_id`；JSON 使用 `url` 字段，便于人工立即核对视频或评论上下文。
 
 ## 安全边界
 

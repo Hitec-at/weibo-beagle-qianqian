@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import store
+from weibo_links import markdown_link, original_url
 
 ROOT = Path(__file__).resolve().parent
 RULES_VERSION = "candidate-review-v1"
@@ -55,6 +56,7 @@ def _post_context(post: dict | None) -> dict:
         return {"missing_from_corpus": True}
     return {
         "id": post.get("id"),
+        "url": original_url(post),
         "screen_name": post.get("screen_name") or "",
         "created_at": post.get("created_at") or "",
         "text": post.get("text_plain") or "",
@@ -578,6 +580,7 @@ def export_human_review(output_dir: str | Path) -> dict:
         grouped[row["meme_slug"]].append(
             {
                 **row,
+                "url": original_url(post or {"id": row["post_id"]}),
                 "post_text": post.get("text_plain") or "",
                 "post_created_at": post.get("created_at") or "",
             }
@@ -594,9 +597,12 @@ def export_human_review(output_dir: str | Path) -> dict:
         lines.extend([f"## {meme['name']}（{slug}）", ""])
         for item in items:
             deferred = item.get("human_decision") == "defer"
+            post_link = markdown_link(
+                item["post_id"], item.get("url") or ""
+            )
             lines.extend(
                 [
-                    f"- `{item['candidate_key']}` · {item['post_id']} · "
+                    f"- {post_link} · `{item['candidate_key']}` · "
                     f"{'人工延后' if deferred else item['decision']} · "
                     f"置信度 {item['confidence']:.2f}",
                     f"  - 原微博：{item['post_text'][:200]}",
