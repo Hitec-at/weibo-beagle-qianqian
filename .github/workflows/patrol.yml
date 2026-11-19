@@ -24,7 +24,7 @@ jobs:
       GITHUB_REPOSITORY: ${{ github.repository }}
       BASE_URL: https://wb-bgqq.fly.dev
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v5
         with:
