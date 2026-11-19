@@ -4,9 +4,10 @@
 
 ## 文档索引
 
-- [钱田村治理与上贡](qiantian-village-governance.md)：村长身份、村庄治理、上贡与收礼玩笑。
+- [钱田村治理与上贡](qiantian-village-governance.md)：村长身份、村庄治理、非人村民、文旅经济和上贡玩笑。
 - [十岁大寿与寿礼](ten-birthday-gifts.md)：生日、年龄、快递与寿礼的观众命名。
 - [老猪与猪化人格](pig-persona.md)：老猪、猪八戒和花猪等拟人化称呼。
+- [称重、胖瘦与庆祝性进食](weight-duality.md)：上秤、体重数字、胖瘦评价和庆祝性进食的连续玩笑。
 
 ## 使用边界
 

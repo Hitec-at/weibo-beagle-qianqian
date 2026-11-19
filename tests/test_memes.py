@@ -103,6 +103,30 @@ class MemeSeedTest(unittest.TestCase):
                 self.assertTrue(terms <= set(rule["search_queries"]))
                 self.assertFalse(terms & set(rule["auto_publish_terms"]))
 
+    def test_20261119_semantic_terms_are_candidate_only(self) -> None:
+        seed = {item["slug"]: item for item in memes.load_seed()}
+        rule = seed["cunzhang"]
+
+        self.assertIn("鸡层群众", rule["candidate_terms"])
+        self.assertIn("鸡层群众", rule["search_queries"])
+        self.assertNotIn("鸡层群众", rule["auto_publish_terms"])
+
+    def test_20261119_semantic_documents_are_registered(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        village = (root / "docs/semantics/qiantian-village-governance.md").read_text(
+            encoding="utf-8"
+        )
+        weight = (root / "docs/semantics/weight-duality.md").read_text(
+            encoding="utf-8"
+        )
+        index = (root / "docs/semantics/README.md").read_text(encoding="utf-8")
+
+        self.assertIn("鸡层群众、咪民与福利审计", village)
+        self.assertIn("文旅宣传与网红经济", village)
+        self.assertIn("称重、胖瘦与庆祝性进食", weight)
+        self.assertIn("不能自动归入本分类", weight)
+        self.assertIn("weight-duality.md", index)
+
     def test_fan_fiction_categories_are_registered(self) -> None:
         seed = {item["slug"]: item for item in memes.load_seed()}
 
