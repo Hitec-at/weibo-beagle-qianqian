@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 
 import store
+from weibo_links import markdown_link, original_url
 
 MANIFEST_SCHEMA_VERSION = 1
 PROPOSAL_SCHEMA_VERSION = "semantic-proposals-v1"
@@ -241,6 +242,7 @@ def _validate_evidence(evidence: list, proposal_key: str) -> list[dict]:
                 "post_id": post_id,
                 "comment_id": str(item.get("comment_id") or ""),
                 "quote": str(item.get("quote") or ""),
+                "url": original_url({"id": post_id}),
             }
         )
     return normalized
@@ -308,9 +310,12 @@ def _review_markdown(
                 evidence = json.loads(item.get("evidence_json") or "[]")
             except ValueError:
                 evidence = item.get("evidence_json") or ""
+        post_link = markdown_link(
+            item["post_id"], item.get("url") or ""
+        )
         lines.extend(
             [
-                f"- `{item['candidate_key']}` · {item['post_id']} · "
+                f"- {post_link} · `{item['candidate_key']}` · "
                 f"{item.get('meme_slug') or ''} · 置信度 "
                 f"{float(item.get('confidence') or 0):.2f}",
                 f"  - 理由：{item.get('reason') or ''}",
@@ -323,8 +328,20 @@ def _review_markdown(
     lines.extend(["", f"## 第二部分：规则与内容建议（{len(proposals)}）", ""])
     for proposal in proposals:
         evidence = "、".join(
-            f"{item['post_id']}"
-            + (f"/{item['comment_id']}" if item["comment_id"] else "")
+            (
+                f"[微博原文（{item['post_id']}"
+                + (f"/{item['comment_id']}" if item["comment_id"] else "")
+                + f"）]({item['url']})"
+                if item.get("url")
+                else (
+                    item["post_id"]
+                    + (
+                        f"/{item['comment_id']}"
+                        if item["comment_id"]
+                        else ""
+                    )
+                )
+            )
             for item in proposal["evidence"]
         )
         lines.extend(
@@ -353,8 +370,10 @@ def build_review_dossier(
     stamp: str,
     proposals_path: str | Path | None = None,
     manifest_path: str | Path | None = None,
+    post_lookup=None,
 ) -> dict:
     """合并待确认微博和语义建议，生成统一人审清单。"""
+    post_lookup = post_lookup or store.get_post
     human_path = Path(candidate_dir) / "human-review.json"
     grouped = (
         json.loads(human_path.read_text(encoding="utf-8"))
@@ -366,9 +385,24 @@ def build_review_dossier(
         for items in grouped.values()
         for item in (items if isinstance(items, list) else [])
     ]
+    for item in human_items:
+        post = post_lookup(str(item.get("post_id") or "")) or {}
+        item["url"] = (
+            original_url(post)
+            or item.get("url")
+            or original_url({"id": item.get("post_id")})
+        )
     proposals = (
         load_semantic_proposals(proposals_path) if proposals_path else []
     )
+    for proposal in proposals:
+        for evidence in proposal["evidence"]:
+            post = post_lookup(str(evidence["post_id"])) or {}
+            evidence["url"] = (
+                original_url(post)
+                or evidence.get("url")
+                or original_url({"id": evidence["post_id"]})
+            )
     manifest = (
         json.loads(Path(manifest_path).read_text(encoding="utf-8"))
         if manifest_path

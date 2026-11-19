@@ -19,6 +19,7 @@ import config
 import filters
 import memes
 import store
+from weibo_links import original_url
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -100,12 +101,6 @@ def sort_control(
 def post_sort_control(request: Request) -> dict:
     """所有微博列表共用的排序入口：热门、最新、最早。"""
     return sort_control(request, POST_SORT_OPTIONS, "hot")
-
-
-def original_url(p: dict) -> str:
-    if p.get("mid"):
-        return f"https://weibo.com/{p['uid']}/{p['mid']}"
-    return f"https://m.weibo.cn/detail/{p['id']}"
 
 
 def excerpt(text: str, n: int = 80) -> str:

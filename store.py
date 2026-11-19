@@ -1093,6 +1093,8 @@ def baseline_review_rows(version: str) -> list[dict]:
                 c.status,
                 c.observed_at,
                 p.created_at,
+                p.mid AS post_mid,
+                p.uid AS post_uid,
                 p.text_plain,
                 p.reposts_count,
                 p.comments_count,

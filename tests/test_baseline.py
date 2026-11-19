@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -26,8 +27,9 @@ class BaselineBuildTest(unittest.TestCase):
                 ("4", "体重管理 排除"),
             ):
                 conn.execute(
-                    "INSERT INTO posts (id, text_plain) VALUES (?, ?)",
-                    (post_id, text),
+                    "INSERT INTO posts (id, mid, uid, text_plain) "
+                    "VALUES (?, ?, ?, ?)",
+                    (post_id, f"m-{post_id}", "42", text),
                 )
             conn.commit()
         finally:
@@ -210,7 +212,14 @@ candidate_terms = ["寿礼", "十岁大寿"]
             Path(self.temp_dir.name) / "review",
         )
         self.assertGreater(review["review_row_count"], 0)
-        self.assertTrue((Path(review["output"]) / "review.md").exists())
+        review_dir = Path(review["output"])
+        markdown = (review_dir / "review.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "[原文](https://weibo.com/42/m-1)（`1`）",
+            markdown,
+        )
+        rows = json.loads((review_dir / "review.json").read_text(encoding="utf-8"))
+        self.assertTrue(all(row["url"].startswith("https://") for row in rows))
 
     def test_incomplete_probe_cannot_build_baseline(self) -> None:
         evidence_path = Path(self.temp_dir.name) / "incomplete.json"
