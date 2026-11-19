@@ -1,0 +1,18 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/feed/feed",
+    "pages/detail/detail",
+    "pages/categories/categories",
+    "pages/search/search"
+  ],
+  "window": {
+    "navigationBarTitleText": "比格钱钱",
+    "navigationBarBackgroundColor": "#faf7f2",
+    "navigationBarTextStyle": "black",
+    "backgroundColor": "#faf7f2",
+    "backgroundTextStyle": "dark"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

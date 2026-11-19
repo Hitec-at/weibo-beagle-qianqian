@@ -10,6 +10,7 @@
 ## 数据与评论
 
 - [Cookie 写入 SOP](cookie-sop.md)
+- [微信小程序迁移与部署](wechat-miniprogram.md)
 - [评论接口探测记录](comment-probe.md)
 - [评论质量试跑结果](comment-pilot-2026-11-11.md)
 - [候选审核准则 v1](../review/candidate-review-v1.md)

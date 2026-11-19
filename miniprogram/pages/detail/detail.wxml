@@ -1,0 +1,70 @@
+<view class="page">
+  <view wx:if="{{error}}" class="error">{{error}}</view>
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+
+  <block wx:if="{{post}}">
+    <view class="card-head">
+      <text>{{post.time_text}}</text>
+      <text>赞 {{post.counts.likes}} · 转 {{post.counts.reposts}} · 评 {{post.counts.comments}}</text>
+    </view>
+    <view class="detail-text" style="margin-top: 18rpx;">{{post.text}}{{post.truncated ? '…' : ''}}</view>
+
+    <video
+      wx:if="{{videoUrl}}"
+      class="video"
+      src="{{videoUrl}}"
+      poster="{{post.video.poster}}"
+      controls
+      show-center-play-btn
+    />
+    <view wx:if="{{videoError}}" class="error" style="margin-top: 18rpx;">
+      {{videoError}}
+      <view class="link" bindtap="copyVideoPage">复制视频原页</view>
+    </view>
+
+    <view wx:if="{{post.pics.length}}" class="thumbs" style="flex-wrap: wrap;">
+      <image
+        wx:for="{{post.pics}}"
+        wx:key="thumb"
+        class="thumb"
+        mode="aspectFill"
+        src="{{item.thumb}}"
+        data-url="{{item.url || item.thumb}}"
+        bindtap="previewImage"
+      />
+    </view>
+
+    <view wx:if="{{post.source}}" class="source-box">
+      <view class="feed-card-title">源微博 · @{{post.source.user}}</view>
+      <view class="excerpt">{{post.source.text}}</view>
+      <view wx:if="{{post.source.pics.length}}" class="thumbs">
+        <image
+          wx:for="{{post.source.pics}}"
+          wx:key="thumb"
+          class="thumb"
+          mode="aspectFill"
+          src="{{item.thumb}}"
+          data-url="{{item.url || item.thumb}}"
+          bindtap="previewImage"
+        />
+      </view>
+    </view>
+
+    <view wx:if="{{post.memes.length}}" class="section-title">所属条目</view>
+    <view class="sort-row">
+      <view
+        wx:for="{{post.memes}}"
+        wx:key="slug"
+        class="chip active"
+      >{{item.name}}</view>
+    </view>
+
+    <view class="button" style="margin-top: 28rpx;" bindtap="copyOriginal">
+      复制微博原文链接
+    </view>
+
+    <view class="footer">
+      本页仅引用公开微博的短文本与缩略图，版权归原作者所有。内容问题请通过原微博联系作者或项目维护者。
+    </view>
+  </block>
+</view>
