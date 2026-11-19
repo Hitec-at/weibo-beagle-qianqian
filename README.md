@@ -25,6 +25,7 @@
 ## 文档
 
 - [路线图](docs/roadmap.md)
+- [微信小程序迁移与部署](docs/technical/wechat-miniprogram.md)
 - [每日生产巡检](docs/technical/daily-patrol.md)
 - [技术文档](docs/technical/README.md)
 - [项目语言表](docs/glossary.md)

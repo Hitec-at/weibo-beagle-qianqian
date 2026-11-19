@@ -649,7 +649,9 @@ def img(u: str = ""):
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok", "posts": store.count_posts()}
+    from app.miniapp_repository import get_repository
+
+    return {"status": "ok", "posts": get_repository().count_posts()}
 
 
 @app.get(f"/{WECHAT_VERIFICATION_NAME}")
@@ -1006,3 +1008,8 @@ def post_detail(request: Request, pid: str):
     if not p:
         raise HTTPException(status_code=404, detail="微博不存在")
     return templates.TemplateResponse(request, "post.html", {"p": p})
+
+
+from app.miniapp_api import router as miniapp_router
+
+app.include_router(miniapp_router)

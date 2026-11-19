@@ -5,7 +5,13 @@ from pathlib import Path
 
 
 DOCKERFILE = Path(__file__).resolve().parents[1] / "Dockerfile"
-APP_MODULES = {"config.py", "filters.py", "memes.py", "store.py"}
+APP_MODULES = {
+    "config.py",
+    "filters.py",
+    "memes.py",
+    "store.py",
+    "weibo_links.py",
+}
 
 
 class DockerRuntimeDependencyTest(unittest.TestCase):

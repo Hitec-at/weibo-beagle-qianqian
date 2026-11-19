@@ -24,7 +24,10 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Compile
-        run: python -m compileall -q app baseline.py comment_pilot.py config.py classify.py fetch_weibo.py filters.py memes.py patrol.py store.py wbq.py
+        run: python -m compileall -q app baseline.py comment_pilot.py config.py classify.py fetch_weibo.py filters.py memes.py mysql_import.py patrol.py store.py wbq.py
 
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+
+      - name: Mini program tests
+        run: node --test miniprogram/tests/*.test.js

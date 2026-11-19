@@ -1,0 +1,18 @@
+{
+  "description": "比格钱钱微博检索小程序",
+  "packOptions": {
+    "ignore": []
+  },
+  "setting": {
+    "urlCheck": true,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true
+  },
+  "compileType": "miniprogram",
+  "libVersion": "2.23.0",
+  "appid": "touristappid",
+  "projectname": "weibo-beagle-qianqian-miniapp",
+  "miniprogramRoot": "./"
+}

@@ -1,0 +1,44 @@
+<view class="page">
+  <view wx:if="{{error}}" class="error">{{error}}</view>
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+
+  <view class="section-title">内容入口</view>
+  <view class="feed-grid">
+    <view
+      wx:for="{{feeds}}"
+      wx:key="key"
+      class="feed-card"
+      data-item="{{item}}"
+      bindtap="openFeed"
+    >
+      <view class="feed-card-title">{{item.title}}</view>
+      <view class="muted">{{item.count}} 条</view>
+    </view>
+  </view>
+
+  <view class="section-title">N宗罪</view>
+  <view
+    wx:for="{{behavior}}"
+    wx:key="slug"
+    class="card"
+    data-item="{{item}}"
+    bindtap="openMeme"
+  >
+    <view class="feed-card-title">{{item.name}}</view>
+    <view class="muted">{{item.explanation}}</view>
+    <view class="counts">收录 {{item.post_count}} 条</view>
+  </view>
+
+  <view class="section-title">粉丝二创</view>
+  <view
+    wx:for="{{fanFiction}}"
+    wx:key="slug"
+    class="card"
+    data-item="{{item}}"
+    bindtap="openMeme"
+  >
+    <view class="feed-card-title">{{item.name}}</view>
+    <view class="muted">{{item.explanation}}</view>
+    <view class="counts">收录 {{item.post_count}} 条</view>
+  </view>
+</view>

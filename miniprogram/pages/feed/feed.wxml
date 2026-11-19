@@ -1,0 +1,61 @@
+<view class="page">
+  <view class="range">共 {{posts.length}} 条已加载</view>
+  <view class="sort-row" style="margin: 22rpx 0;">
+    <view
+      wx:for="{{sorts}}"
+      wx:key="value"
+      class="chip {{sort === item.value ? 'active' : ''}}"
+      data-sort="{{item.value}}"
+      bindtap="changeSort"
+    >{{item.label}}</view>
+  </view>
+
+  <view wx:if="{{error}}" class="error">{{error}}</view>
+  <view wx:if="{{!loading && !posts.length}}" class="empty">暂无内容</view>
+
+  <view wx:if="{{grid}}" class="photo-grid">
+    <view
+      wx:for="{{posts}}"
+      wx:key="id"
+      class="photo-item"
+      data-id="{{item.id}}"
+      bindtap="openDetail"
+    >
+      <image
+        wx:if="{{item.pics.length}}"
+        class="photo-image"
+        mode="aspectFill"
+        src="{{item.pics[0].thumb}}"
+      />
+      <text class="photo-meta">{{item.time_text}} · 赞 {{item.counts.likes}}</text>
+    </view>
+  </view>
+
+  <view wx:else>
+    <view
+      wx:for="{{posts}}"
+      wx:key="id"
+      class="card"
+      data-id="{{item.id}}"
+      bindtap="openDetail"
+    >
+      <view class="card-head">
+        <text>{{item.time_text}}</text>
+        <text>{{item.author}}</text>
+      </view>
+      <view class="excerpt">{{item.text}}{{item.truncated ? '…' : ''}}</view>
+      <image
+        wx:if="{{item.pics.length}}"
+        class="thumb"
+        mode="aspectFill"
+        src="{{item.pics[0].thumb}}"
+      />
+      <view class="counts">
+        赞 {{item.counts.likes}} · 转 {{item.counts.reposts}} · 评 {{item.counts.comments}}
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="empty">加载中…</view>
+  <view wx:if="{{!hasMore && posts.length}}" class="empty">已经到底了</view>
+</view>

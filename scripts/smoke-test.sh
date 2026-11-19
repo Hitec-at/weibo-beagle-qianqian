@@ -24,6 +24,7 @@ request "/fan-memes/all"
 request "/interactions"
 request "/photos"
 request "/search?q=%E5%9E%83%E5%9C%BE%E6%A1%B6"
+python3 "$ROOT_DIR/scripts/smoke_miniapp_api.py" "$BASE_URL"
 
 POST_ID="$(python3 - "$DB_PATH" <<'PY'
 import sqlite3
