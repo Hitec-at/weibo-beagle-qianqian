@@ -160,8 +160,8 @@ kind = "fan_fiction"
 match_mode = "mixed"
 aliases = ["钱田村", "村长"]
 auto_publish_terms = ["钱田村", "给村长上贡", "村长开的店", "村干部"]
-candidate_terms = ["村长", "上贡", "钱村"]
-search_queries = ["村长", "钱田村", "给村长上贡", "钱村"]
+candidate_terms = ["村长", "上贡", "钱村", "鸡层群众"]
+search_queries = ["村长", "钱田村", "给村长上贡", "钱村", "鸡层群众"]
 curated_post_ids = [
     "5133652641975440", "5115446806188047", "5127814120475356",
     "5307141714087299", "5142734563447600"
