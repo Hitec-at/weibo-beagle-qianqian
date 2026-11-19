@@ -1,5 +1,5 @@
 # 单镜像打包：SQLite 快照烤进镜像，云上只读，不挂持久卷。
-FROM python:3.11-slim
+FROM python:3.15-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
