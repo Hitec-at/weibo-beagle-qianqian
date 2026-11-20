@@ -127,6 +127,22 @@ class MemeSeedTest(unittest.TestCase):
         self.assertIn("不能自动归入本分类", weight)
         self.assertIn("weight-duality.md", index)
 
+    def test_20261120_semantic_documents_are_registered(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        village = (root / "docs/semantics/qiantian-village-governance.md").read_text(
+            encoding="utf-8"
+        )
+        weight = (root / "docs/semantics/weight-duality.md").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("防汛抗洪与应急动员", village)
+        self.assertIn("不代表钱钱现实中担任公职或参与救灾指挥", village)
+        self.assertIn("5044483530691682", village)
+        self.assertIn("“钱田村的秤”拟人叙事", weight)
+        self.assertIn("不证明其他称重内容真实发生", weight)
+        self.assertIn("5038352384133889", weight)
+
     def test_fan_fiction_categories_are_registered(self) -> None:
         seed = {item["slug"]: item for item in memes.load_seed()}
 
